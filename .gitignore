@@ -1,0 +1,19 @@
+# Rust
+/core/target/
+# Android
+/android/.gradle/
+/android/.kotlin/
+/android/build/
+/android/app/build/
+/android/local.properties
+# Generated from core/ by the Gradle build
+/android/app/src/main/jniLibs/
+/android/app/src/main/java/com/dby/core/
+# Benchmark logcat dumps can contain other apps' logs
+/docs/benchmarks/raw/
+# Plan-execution scratch
+/.superpowers/
+# Signing keys never go in git
+*.jks
+*.keystore
+keystore.properties

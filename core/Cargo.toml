@@ -1,0 +1,32 @@
+[package]
+name = "dby-core"
+version = "0.1.0"
+edition = "2021"
+license = "Apache-2.0"
+publish = false
+
+[lib]
+name = "dby_core"
+crate-type = ["cdylib", "lib"]
+
+[dependencies]
+uniffi = { version = "0.32", features = ["tokio"] }
+# ring, not aws-lc-rs: it cross-compiles for Android with the NDK alone.
+mysql_async = { version = "0.37", default-features = false, features = ["default-rustls-ring", "client_ed25519"] }
+rustls = { version = "0.23", default-features = false, features = ["ring", "std", "tls12", "logging"] }
+tokio = { version = "1", features = ["time", "sync", "macros"] }
+futures-util = "0.3"
+thiserror = "2"
+
+[dev-dependencies]
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "time", "sync"] }
+
+[workspace]
+members = ["uniffi-bindgen"]
+
+[profile.release]
+lto = true
+codegen-units = 1
+opt-level = "s"
+strip = true
+panic = "abort"
