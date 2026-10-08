@@ -1,4 +1,6 @@
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
+import java.io.File
+import java.util.Properties
 
 plugins {
     id("com.android.application")
@@ -22,13 +24,25 @@ android {
         }
     }
 
+    // The release key lives outside the repo (~/.dby-signing). Without it, release builds
+    // fall back to the debug key so they still build on other machines.
+    val signing = File(System.getProperty("user.home"), ".dby-signing/keystore.properties")
+    if (signing.exists()) {
+        val props = Properties().apply { signing.inputStream().use(::load) }
+        signingConfigs.create("release") {
+            storeFile = file(props.getProperty("storeFile"))
+            storePassword = props.getProperty("storePassword")
+            keyAlias = props.getProperty("keyAlias")
+            keyPassword = props.getProperty("keyPassword")
+        }
+    }
+
     buildTypes {
         release {
             isMinifyEnabled = true
             isShrinkResources = true
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
-            // M3 replaces this with the release key.
-            signingConfig = signingConfigs.getByName("debug")
+            signingConfig = signingConfigs.findByName("release") ?: signingConfigs.getByName("debug")
         }
     }
 
