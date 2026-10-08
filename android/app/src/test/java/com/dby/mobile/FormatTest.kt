@@ -73,4 +73,11 @@ class FormatTest {
         assertEquals("The server refused it (error 1146).", DbyException.Server(1146u, "Table 'x' doesn't exist").sentence())
         assertEquals("boom", IllegalStateException("boom").sentence())
     }
+
+    @Test
+    fun csv_quotes_only_when_it_must() {
+        val columns = listOf(com.dby.core.ColumnOut("id", "int"), com.dby.core.ColumnOut("note", "varchar"))
+        val rows = listOf(listOf(Cell.Signed(1), Cell.Text("a,b \"c\"", 9u)), listOf(Cell.Signed(2), Cell.Null))
+        assertEquals("id,note\n1,\"a,b \"\"c\"\"\"\n2,\n", com.dby.mobile.data.csv(columns, rows))
+    }
 }

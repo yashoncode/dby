@@ -3432,7 +3432,7 @@ git commit -m "feat(android): Explorer with cached schema, database switch, pins
 
 **Interfaces:**
 - Consumes: Tasks 1–5; core `Session.tablePage/countRows/facetCounts`, `PageRequest`, `CountRequest`, `FacetRequest`, `Filter`, `FilterOp`, `Sort`, `Page`, `ColumnOut`, `ColumnDef`, `TableInfo`.
-- Produces: `columnWidth(type)`, `LazyListScope.gridItems(columns, rows, hScroll, keyColumns, sorted, onRow, onCell)`; `csv(columns, rows)`; `TableModel` with `session`, `info`, `defs`, `filters`, `sort`, `columns`, `rows`, `pageIndex`, `hasNext`, `total`, `facets`, `facetColumn`, `loading`, `problem`, `cards`, `readOnly`, `editor`, `viewing`, `filtering`, `sorting`, `reload()`, `reloadCurrent()`, `next()`, `previous()`, `addFilter(f)`, `removeFilter(i)`, `pickFacet(value)`, `setSort(s)`, `edit(rowIndex)`, `insert()`, `view(row, column)`, `rangeText`; `TableScreen(app, connectionId, table)`; `Filter.label()`.
+- Produces: `columnWidth(type)`, `LazyListScope.gridItems(columns, rows, hScroll, keyColumns, sorted, onRow, onCell)`; `csv(columns, rows)`; `TableModel` with `session`, `info`, `defs`, `filters`, `sort`, `columns`, `rows`, `pageIndex`, `hasNext`, `total`, `facets`, `facetColumn`, `loading`, `problem`, `cards`, `readOnly`, `editor`, `viewing`, `filtering`, `sorting`, `reload()`, `reloadCurrent()`, `next()`, `previous()`, `addFilter(f)`, `removeFilter(i)`, `pickFacet(value)`, `sortBy(s)`, `edit(rowIndex)`, `insert()`, `view(row, column)`, `rangeText`; `TableScreen(app, connectionId, table)`; `Filter.label()`.
 
 - [ ] **Step 1: Write the failing CSV test**
 
@@ -3776,7 +3776,7 @@ class TableModel(
 
     val facetValue: String? get() = filters.firstOrNull { it.column == facetColumn?.name && it.op == FilterOp.EQ }?.value
 
-    fun setSort(value: Sort?) {
+    fun sortBy(value: Sort?) {
         sort = value
         sorting = false
         reload()
@@ -4031,10 +4031,10 @@ fun TableScreen(app: DbyApp, connectionId: String, table: String) {
             }
             item {
                 LazyRow(contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 14.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    itemsIndexed(model.filters) { i, f ->
-                        if (f.column != model.facetColumn?.name || f.op != FilterOp.EQ) {
-                            Chip(f.label(), selected = false, onClick = { model.removeFilter(i) }, icon = DbyIcons.Filter, onClose = { model.removeFilter(i) })
-                        }
+                    // Facet filters show as the selected facet chip instead.
+                    val shown = model.filters.withIndex().filterNot { it.value.column == model.facetColumn?.name && it.value.op == FilterOp.EQ }
+                    items(shown) { (i, f) ->
+                        Chip(f.label(), selected = false, onClick = { model.removeFilter(i) }, icon = DbyIcons.Filter, onClose = { model.removeFilter(i) })
                     }
                     item { Chip("Filter", selected = false, onClick = { model.filtering = FilterOp.EQ }, icon = DbyIcons.Plus) }
                 }
@@ -4188,14 +4188,14 @@ private fun SortSheet(model: TableModel, backdrop: Backdrop) {
         Text("Sort by", style = Type.Title)
         Segmented(listOf(true, false), descending, { descending = it }, { if (it) "Descending" else "Ascending" }, Modifier.fillMaxWidth())
         Column(Modifier.fillMaxWidth().heightIn(max = 420.dp).lightGlass(RoundedCornerShape(22.dp)).verticalScroll(rememberScrollState())) {
-            ListRow("Key order", onClick = { model.setSort(null) }, trailing = { if (model.sort == null) Icon(DbyIcons.Check, null, tint = LocalAccent.current) })
+            ListRow("Key order", onClick = { model.sortBy(null) }, trailing = { if (model.sort == null) Icon(DbyIcons.Check, null, tint = LocalAccent.current) })
             for (c in model.columns) {
                 Hairline()
                 ListRow(
                     c.name,
                     subtitle = c.typeName,
                     titleStyle = Type.Mono,
-                    onClick = { model.setSort(Sort(c.name, descending)) },
+                    onClick = { model.sortBy(Sort(c.name, descending)) },
                     trailing = { if (model.sort?.column == c.name) Icon(DbyIcons.Check, null, tint = LocalAccent.current) },
                 )
             }

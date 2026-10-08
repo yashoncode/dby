@@ -43,6 +43,7 @@ import com.dby.mobile.data.AppLock
 import com.dby.mobile.ui.connections.ConnectionsScreen
 import com.dby.mobile.ui.connections.EditConnectionScreen
 import com.dby.mobile.ui.explorer.ExplorerScreen
+import com.dby.mobile.ui.table.TableScreen
 import com.dby.mobile.ui.DbyIcons
 import com.dby.mobile.ui.glass.GlassHost
 import com.dby.mobile.ui.glass.liquidGlass
@@ -73,7 +74,7 @@ fun AppRoot(app: DbyApp) {
                 Screen.Connections -> ConnectionsScreen(app)
                 is Screen.EditConnection -> EditConnectionScreen(app, screen.id)
                 is Screen.Explorer -> ExplorerScreen(app, screen.connectionId)
-                is Screen.Table -> Placeholder("Table ${screen.table}")
+                is Screen.Table -> TableScreen(app, screen.connectionId, screen.table)
                 Screen.Query -> Placeholder("Query")
                 Screen.History -> Placeholder("History")
                 Screen.Settings -> Placeholder("Settings")

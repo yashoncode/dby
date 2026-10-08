@@ -79,3 +79,11 @@ fun Throwable.sentence(): String = when (this) {
 
 /** The raw text behind a [sentence]. */
 fun Throwable.details(): String = message ?: toString()
+
+/** The rows as CSV for sharing. Values trimmed by the page stay trimmed; NULL is an empty field. */
+fun csv(columns: List<com.dby.core.ColumnOut>, rows: List<List<Cell>>): String = buildString {
+    append(columns.joinToString(",") { csvField(it.name) }).append('\n')
+    for (row in rows) append(row.joinToString(",") { if (it is Cell.Null) "" else csvField(it.rawText() ?: it.display()) }).append('\n')
+}
+
+private fun csvField(s: String) = if (s.any { it == ',' || it == '"' || it == '\n' || it == '\r' }) "\"" + s.replace("\"", "\"\"") + "\"" else s
