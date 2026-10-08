@@ -3,6 +3,7 @@
 uniffi::setup_scaffolding!();
 
 mod classify;
+mod edit;
 mod error;
 mod schema;
 mod paging;
