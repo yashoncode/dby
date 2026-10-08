@@ -43,6 +43,27 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.tween
+import androidx.compose.foundation.gestures.Orientation
+import androidx.compose.foundation.gestures.draggable
+import androidx.compose.foundation.gestures.rememberDraggableState
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
+import androidx.compose.ui.input.nestedscroll.NestedScrollSource
+import androidx.compose.ui.input.nestedscroll.nestedScroll
+import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.unit.IntOffset
+import androidx.compose.ui.unit.Velocity
+import kotlin.math.roundToInt
+import kotlinx.coroutines.launch
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -446,10 +467,10 @@ fun FieldRow(
 }
 
 @Composable
-fun SearchField(value: String, onChange: (String) -> Unit, placeholder: String, modifier: Modifier = Modifier) {
+fun SearchField(value: String, onChange: (String) -> Unit, placeholder: String, modifier: Modifier = Modifier, inset: Dp = 16.dp) {
     Row(
         modifier
-            .padding(horizontal = 16.dp)
+            .padding(horizontal = inset)
             .fillMaxWidth()
             .height(44.dp)
             .lightGlass(RoundedCornerShape(22.dp))
@@ -546,7 +567,8 @@ fun SqlBox(sql: String, modifier: Modifier = Modifier, header: String? = null, n
 
 /**
  * A bottom sheet drawn inside the screen rather than in its own window, so its frosted glass
- * blurs the screen underneath. Back and a tap on the scrim close it; the tab pill hides meanwhile.
+ * blurs the screen underneath. It slides up on open; dragging it down (anywhere on it, or past the
+ * top of a list inside it), Back and a tap on the scrim slide it away. The tab pill hides meanwhile.
  */
 @Composable
 fun Sheet(backdrop: Backdrop, onDismiss: () -> Unit, content: @Composable ColumnScope.() -> Unit) {
@@ -555,14 +577,79 @@ fun Sheet(backdrop: Backdrop, onDismiss: () -> Unit, content: @Composable Column
         nav.sheetShown()
         onDispose { nav.sheetHidden() }
     }
-    BackHandler(onBack = onDismiss)
+    val dismissNow by rememberUpdatedState(onDismiss)
+    val scope = rememberCoroutineScope()
     BoxWithConstraints(Modifier.fillMaxSize()) {
-        Box(Modifier.fillMaxSize().background(Dby.Scrim).clickable(interactionSource = null, indication = null, onClick = onDismiss))
+        val screen = constraints.maxHeight.toFloat()
+        // How far the sheet sits below its resting place, in pixels; starts off screen.
+        val offset = remember { Animatable(screen) }
+        var height by remember { mutableFloatStateOf(screen) }
+        var closing by remember { mutableStateOf(false) }
+        LaunchedEffect(Unit) { offset.animateTo(0f, spring(stiffness = Spring.StiffnessMediumLow)) }
+
+        fun close() {
+            if (closing) return
+            closing = true
+            scope.launch {
+                offset.animateTo(height, tween(220))
+                dismissNow()
+            }
+        }
+
+        fun settle(velocity: Float) {
+            if (offset.value > height * 0.25f || velocity > 1_800f) close()
+            else scope.launch { offset.animateTo(0f, spring(stiffness = Spring.StiffnessMedium)) }
+        }
+
+        fun dragBy(delta: Float) {
+            if (!closing) scope.launch { offset.snapTo((offset.value + delta).coerceAtLeast(0f)) }
+        }
+
+        // A list inside the sheet scrolls first; past its top, the drag moves the sheet instead.
+        val lists = remember {
+            object : NestedScrollConnection {
+                override fun onPreScroll(available: Offset, source: NestedScrollSource): Offset {
+                    if (available.y >= 0f || offset.value <= 0f) return Offset.Zero
+                    val used = maxOf(available.y, -offset.value)
+                    dragBy(used)
+                    return Offset(0f, used)
+                }
+
+                override fun onPostScroll(consumed: Offset, available: Offset, source: NestedScrollSource): Offset {
+                    if (available.y <= 0f || source != NestedScrollSource.UserInput) return Offset.Zero
+                    dragBy(available.y)
+                    return Offset(0f, available.y)
+                }
+
+                override suspend fun onPreFling(available: Velocity): Velocity {
+                    if (offset.value <= 0f) return Velocity.Zero
+                    settle(available.y)
+                    return available
+                }
+            }
+        }
+
+        BackHandler { close() }
+        Box(
+            Modifier
+                .fillMaxSize()
+                .graphicsLayer { alpha = 1f - (offset.value / height).coerceIn(0f, 1f) }
+                .background(Dby.Scrim)
+                .clickable(interactionSource = null, indication = null) { close() },
+        )
         Column(
             Modifier
                 .align(Alignment.BottomCenter)
+                .offset { IntOffset(0, offset.value.roundToInt()) }
                 .fillMaxWidth()
                 .heightIn(max = maxHeight * 0.92f)
+                .onSizeChanged { height = it.height.toFloat().coerceAtLeast(1f) }
+                .nestedScroll(lists)
+                .draggable(
+                    rememberDraggableState { dragBy(it) },
+                    Orientation.Vertical,
+                    onDragStopped = { settle(it) },
+                )
                 .frostedGlass(backdrop, UnevenRoundedRectangle(topStart = 32.dp, topEnd = 32.dp))
                 .clickable(interactionSource = null, indication = null) {}
                 .navigationBarsPadding()

@@ -1,5 +1,7 @@
 package com.dby.mobile.ui.query
 
+import com.dby.mobile.data.fuzzySearch
+import com.dby.mobile.ui.common.SearchField
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -389,8 +391,12 @@ private fun ConnectionPicker(app: DbyApp, model: QueryModel, backdrop: Backdrop,
 private fun TablePicker(model: QueryModel, backdrop: Backdrop, onDismiss: () -> Unit) {
     Sheet(backdrop, onDismiss) {
         Text("Table", style = Type.Title)
-        val tables = model.schema?.tables.orEmpty()
-        Column(Modifier.fillMaxWidth().heightIn(max = 520.dp).lightGlass(RoundedCornerShape(22.dp)).verticalScroll(rememberScrollState())) {
+        var search by remember { mutableStateOf("") }
+        val all = model.schema?.tables.orEmpty()
+        if (all.size > 8) SearchField(search, { search = it }, "Search tables", inset = 0.dp)
+        val tables = fuzzySearch(all, search) { listOf(it.name) }
+        if (tables.isEmpty()) Text("No table matches \"${search.trim()}\".", style = Type.Secondary, color = Dby.Secondary)
+        else Column(Modifier.fillMaxWidth().heightIn(max = 520.dp).lightGlass(RoundedCornerShape(22.dp)).verticalScroll(rememberScrollState())) {
             tables.forEachIndexed { i, t ->
                 if (i > 0) Hairline()
                 ListRow(t.name, subtitle = if (t.isView) "view" else "${t.columns.size} columns", titleStyle = Type.Mono, onClick = { model.pickTable(t.name); onDismiss() })

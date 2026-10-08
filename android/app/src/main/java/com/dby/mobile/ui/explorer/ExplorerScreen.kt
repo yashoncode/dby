@@ -1,5 +1,6 @@
 package com.dby.mobile.ui.explorer
 
+import com.dby.mobile.data.fuzzySearch
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -177,8 +178,7 @@ class ExplorerModel(val id: String, private val sessions: Sessions, private val 
     val tables: List<TableInfo>
         get() {
             val all = schema?.tables.orEmpty().filter { (kind == Kind.VIEWS) == it.isView }
-            val needle = filter.trim()
-            val matched = if (needle.isEmpty()) all else all.filter { t -> t.name.contains(needle, true) || t.columns.any { it.name.contains(needle, true) } }
+            val matched = fuzzySearch(all, filter) { t -> listOf(t.name) + t.columns.map { it.name } }
             return if (bySize) matched.sortedByDescending { it.bytes ?: 0u } else matched.sortedBy { it.name.lowercase() }
         }
 

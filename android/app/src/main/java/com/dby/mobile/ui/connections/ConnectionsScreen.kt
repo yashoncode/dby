@@ -1,5 +1,6 @@
 package com.dby.mobile.ui.connections
 
+import com.dby.mobile.data.fuzzySearch
 import android.net.Uri
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -85,10 +86,7 @@ class ConnectionsModel(private val sessions: Sessions) : ScreenModel() {
     var deleting by mutableStateOf<SavedConnection?>(null)
 
     val shown: List<SavedConnection>
-        get() = sessions.connections.filter { c ->
-            (env == null || c.env == env) &&
-                (query.isBlank() || listOf(c.name, c.host, c.database, c.user).any { it.contains(query.trim(), ignoreCase = true) })
-        }
+        get() = fuzzySearch(sessions.connections.filter { env == null || it.env == env }, query) { listOf(it.name, it.host, it.database, it.user) }
 
     fun delete(c: SavedConnection) {
         scope.launch {
