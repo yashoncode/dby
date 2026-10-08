@@ -22,6 +22,8 @@ class Prefs(context: Context) {
     var updateChecks by stored(true)
     var lastUpdateCheckMs by stored(0L)
     var seenVersionCode by stored(0)
+    /** Notes of the update being installed, shown once after it lands. */
+    var whatsNew by stored("")
 
     /** Tables pinned on the Explorer, per connection and database. */
     fun pinnedTables(connectionId: String, database: String): Set<String> =

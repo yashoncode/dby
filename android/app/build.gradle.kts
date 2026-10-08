@@ -17,8 +17,10 @@ android {
         applicationId = "com.dby.mobile"
         minSdk = 26
         targetSdk = 36
-        versionCode = 10
-        versionName = "0.1.0"
+        versionCode = 100
+        versionName = "1.0.0"
+        // Off for any store build: Play does not allow REQUEST_INSTALL_PACKAGES for apps like this.
+        buildConfigField("boolean", "IN_APP_UPDATES", "true")
         ndk {
             abiFilters.addAll(listOf("arm64-v8a", "x86_64"))
         }
@@ -126,4 +128,6 @@ dependencies {
     // backdrop declares its shapes dependency as runtime-only; the glass code names its shapes.
     implementation("io.github.kyant0:shapes:1.2.1")
     testImplementation("junit:junit:4.13.2")
+    // android.jar only stubs org.json; the dbx import and updater tests parse real JSON.
+    testImplementation("org.json:json:20250517")
 }

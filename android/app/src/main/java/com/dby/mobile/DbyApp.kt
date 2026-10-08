@@ -11,6 +11,7 @@ import com.dby.mobile.data.Prefs
 import com.dby.mobile.data.Secrets
 import com.dby.mobile.data.Sessions
 import com.dby.mobile.ui.nav.Navigator
+import com.dby.mobile.update.Updater
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -23,6 +24,11 @@ class DbyApp : Application() {
         private set
     lateinit var sessions: Sessions
         private set
+    lateinit var updater: Updater
+        private set
+
+    /** "Updated to X" and its notes, once after an update; the Connections screen shows it. */
+    var whatsNew by mutableStateOf<Pair<String, String>?>(null)
 
     /** True while App lock covers the screen. */
     var locked by mutableStateOf(false)
@@ -37,6 +43,8 @@ class DbyApp : Application() {
         prefs = Prefs(this)
         sessions = Sessions(prefs, Secrets())
         sessions.reload()
+        updater = Updater(this, prefs, scope)
+        whatsNew = updater.takeWhatsNew()
     }
 
     /** From Activity.onStart: a cold start, or a return after a minute away, locks the app. */
@@ -44,6 +52,7 @@ class DbyApp : Application() {
         val away = SystemClock.elapsedRealtime() - backgroundSince
         if (prefs.appLock && AppLock.supported && (backgroundSince == 0L || away > LOCK_AFTER_MS)) locked = true
         if (backgroundSince != 0L && prefs.reconnect) sessions.pingAll(scope)
+        updater.check(manual = false)
     }
 
     fun onBackground() {
