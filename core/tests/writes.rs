@@ -92,3 +92,23 @@ async fn row_changes_on_a_table_without_a_key_are_blocked() {
         assert!(matches!(r, Err(DbyError::ReadOnlyBlocked { .. })), "{name}: {r:?}");
     }
 }
+
+#[tokio::test]
+async fn a_failed_row_change_does_not_keep_the_row_locked() {
+    for (name, port) in targets() {
+        clear(port, "300").await;
+        let session = open(port).await;
+        let insert = change(ChangeKind::Insert, vec![], vec![set("id", Some("300")), set("name", Some("short"))]);
+        session.apply_row_change(insert).await.unwrap();
+        let too_long = change(ChangeKind::Update, vec![Cell::Signed { v: 300 }], vec![set("name", Some(&"x".repeat(30)))]);
+        let failed = session.apply_row_change(too_long).await;
+        assert!(failed.is_err(), "{name}: {failed:?}");
+        let mut other = raw(port).await;
+        other.query_drop("SET SESSION innodb_lock_wait_timeout = 2").await.unwrap();
+        other
+            .query_drop("UPDATE edits SET qty = 1 WHERE id = 300")
+            .await
+            .unwrap_or_else(|e| panic!("{name}: the failed change still holds the row: {e:?}"));
+        other.disconnect().await.unwrap();
+    }
+}

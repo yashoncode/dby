@@ -11,7 +11,7 @@ use mysql_async::prelude::Queryable;
 use mysql_async::{Column, Conn, Opts, OptsBuilder, Row, SslOpts, TxOpts, Value};
 use tokio::sync::Mutex;
 
-use crate::classify::{classify, SqlKind};
+use crate::classify::{self, classify, SqlKind};
 use crate::edit::{self, Prepared, RowChange};
 use crate::error::{is_connection_lost, DbyError};
 use crate::paging::{self, Cursor, Filter, PageSpec, SelectSpec, Sort, TableMeta};
@@ -311,13 +311,17 @@ impl Session {
     /// Moves both connections to `name` and reads its schema.
     pub async fn use_database(&self, name: String) -> Result<Schema, DbyError> {
         let sql = format!("USE {}", paging::quote_ident(&name));
-        for role in [Role::Browse, Role::Query] {
-            let mut guard = self.conn(role).lock().await;
-            let conn = guard.as_mut().ok_or_else(closed)?;
-            conn.query_drop(&sql).await?;
+        {
+            // Both locks at once, query first (the order run_sql's kill_query takes them in), so
+            // no browse read runs in the new database under the old schema.
+            let mut query = self.query.lock().await;
+            let mut browse = self.browse.lock().await;
+            for conn in [query.as_mut(), browse.as_mut()] {
+                conn.ok_or_else(closed)?.query_drop(&sql).await?;
+            }
+            self.params.lock().unwrap().database = name;
+            self.tables.lock().unwrap().clear();
         }
-        self.params.lock().unwrap().database = name;
-        self.tables.lock().unwrap().clear();
         self.refresh_schema().await
     }
 
@@ -423,6 +427,16 @@ impl Session {
     /// Runs the user's SQL on the query connection and stops at 1000 rows. A write runs only
     /// when `allow_write` is true (the person confirmed it) and the session is not read-only.
     pub async fn run_sql(&self, run_id: String, sql: String, allow_write: bool) -> Result<QueryResult, DbyError> {
+        if let Some(database) = classify::use_target(&sql) {
+            let started = Instant::now();
+            let outcome = self.use_database(database).await;
+            self.record(&sql, outcome.as_ref().err().map(|e| e.to_string()), 0, elapsed_ms(started));
+            outcome?;
+            return Ok(QueryResult { columns: vec![], rows: vec![], affected_rows: 0, truncated: false, elapsed_ms: elapsed_ms(started) });
+        }
+        if classify::contains_use(&sql) {
+            return Err(DbyError::ReadOnlyBlocked { detail: "run USE on its own, so both of DBY's connections switch".into() });
+        }
         let kind = classify(&sql);
         if kind == SqlKind::Write {
             self.check_writable()?;
@@ -548,7 +562,12 @@ impl Session {
         let mut guard = self.browse.lock().await;
         let conn = guard.as_mut().ok_or_else(closed)?;
         let mut tx = conn.start_transaction(TxOpts::default()).await?;
-        tx.exec_drop(prepared.sql.as_str(), prepared.params.clone()).await?;
+        if let Err(e) = tx.exec_drop(prepared.sql.as_str(), prepared.params.clone()).await {
+            // Roll back now: a dropped transaction rolls back only at the next command, and
+            // until then the row stays locked for everyone else.
+            let _ = tx.rollback().await;
+            return Err(e.into());
+        }
         let affected = tx.affected_rows();
         if affected != 1 {
             tx.rollback().await?;

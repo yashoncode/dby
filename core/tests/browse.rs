@@ -1,7 +1,7 @@
 mod common;
 
 use common::{column, open, page, targets};
-use dby_core::{Cell, CellRequest, CountRequest, FacetRequest, Filter, FilterOp, SelectSpec, Sort};
+use dby_core::{Cell, CellRequest, CountRequest, DbyError, FacetRequest, Filter, FilterOp, SelectSpec, Sort};
 
 fn filter(column: &str, op: FilterOp, value: &str) -> Filter {
     Filter { column: column.into(), op, value: value.into() }
@@ -90,22 +90,62 @@ async fn nullable_sort_column_pages_by_offset() {
 
 #[tokio::test]
 async fn counts_respect_filters() {
+    // Small tables: a count over the 100k-row orders table can pass the 2 s cap while the
+    // rest of the suite loads the same server, and then rightly comes back as None.
     for (name, port) in targets() {
         let session = open(port).await;
         let count = |table: &str, filters: Vec<Filter>| CountRequest { table: table.into(), filters };
-        let shipped_big = session
-            .count_rows(count("orders", vec![filter("status", FilterOp::Eq, "shipped"), filter("total", FilterOp::Gt, "500")]))
-            .await
-            .unwrap();
-        let expected = column(port, "SELECT COUNT(*) FROM orders WHERE status = 'shipped' AND total > 500").await;
-        assert_eq!(shipped_big.map(|n| n.to_string()), Some(expected[0].clone()), "{name}");
-        let customer = session.count_rows(count("orders", vec![filter("customer", FilterOp::Contains, "Customer 99")])).await.unwrap();
-        let expected = column(port, "SELECT COUNT(*) FROM orders WHERE customer LIKE '%Customer 99%'").await;
-        assert_eq!(customer.map(|n| n.to_string()), Some(expected[0].clone()), "{name}");
-        let percent = session.count_rows(count("tags", vec![filter("name", FilterOp::Contains, "%")])).await.unwrap();
-        assert_eq!(percent, Some(0), "{name}: % must match literally");
-        let no_notes = session.count_rows(count("orders", vec![filter("notes", FilterOp::IsNull, "")])).await.unwrap();
-        assert_eq!(no_notes, Some(90_000), "{name}");
+        let new_items = session.count_rows(count("items", vec![filter("state", FilterOp::Eq, "new")])).await.unwrap();
+        assert_eq!(new_items, Some(34), "{name}");
+        let big_pairs = session.count_rows(count("pairs", vec![filter("a", FilterOp::Gt, "5"), filter("b", FilterOp::Le, "1")])).await.unwrap();
+        assert_eq!(big_pairs, Some(8), "{name}");
+        let with_an = session.count_rows(count("tags", vec![filter("name", FilterOp::Contains, "an")])).await.unwrap();
+        let expected = column(port, "SELECT COUNT(*) FROM tags WHERE name LIKE '%an%'").await;
+        assert_eq!(with_an.map(|n| n.to_string()), Some(expected[0].clone()), "{name}");
+        for literal in ["%", "_", "!"] {
+            let none = session.count_rows(count("tags", vec![filter("name", FilterOp::Contains, literal)])).await.unwrap();
+            assert_eq!(none, Some(0), "{name}: {literal} must match literally");
+        }
+        let unlabelled = session.count_rows(count("items", vec![filter("label", FilterOp::IsNull, "")])).await.unwrap();
+        assert_eq!(unlabelled, Some(100), "{name}");
+    }
+}
+
+#[tokio::test]
+async fn enum_sort_pages_return_every_row_once_in_enum_order() {
+    for (name, port) in targets() {
+        let session = open(port).await;
+        let mut req = page("items", 30);
+        req.sort = Some(Sort { column: "state".into(), descending: false });
+        let mut ids = Vec::new();
+        loop {
+            let p = session.table_page(req.clone()).await.unwrap();
+            ids.extend(p.rows.iter().map(|r| match r[0] {
+                Cell::Signed { v } => v.to_string(),
+                ref other => panic!("{name}: {other:?}"),
+            }));
+            match p.next {
+                Some(next) => req.cursor = Some(next),
+                None => break,
+            }
+        }
+        assert_eq!(ids, column(port, "SELECT id FROM items ORDER BY state, id").await, "{name}");
+    }
+}
+
+#[tokio::test]
+async fn use_in_the_query_tab_moves_both_connections() {
+    for (name, port) in targets() {
+        let session = open(port).await;
+        session.run_sql("u".into(), "USE archive".into(), false).await.unwrap_or_else(|e| panic!("{name}: {e:?}"));
+        assert_eq!(session.database(), "archive", "{name}");
+        let page = session.table_page(page("old", 10)).await.unwrap_or_else(|e| panic!("{name}: browse did not move: {e:?}"));
+        assert!(page.rows.is_empty(), "{name}");
+        let r = session.run_sql("d".into(), "SELECT DATABASE()".into(), false).await.unwrap();
+        assert_eq!(r.rows[0][0], Cell::Text { v: "archive".into(), full_len: 7 }, "{name}");
+        let batch = session.run_sql("b".into(), "USE shop; SELECT 1".into(), true).await;
+        assert!(matches!(batch, Err(DbyError::ReadOnlyBlocked { .. })), "{name}: {batch:?}");
+        assert_eq!(session.database(), "archive", "{name}");
     }
 }
 

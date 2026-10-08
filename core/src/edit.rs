@@ -40,7 +40,7 @@ pub fn prepare(meta: &TableMeta, change: &RowChange) -> Result<Prepared, DbyErro
     check(meta, change)?;
     let table = quote_ident(&change.table);
     let key_where = meta.pk.iter().map(|&i| format!("{} = ?", quote_ident(&meta.columns[i].name))).collect::<Vec<_>>().join(" AND ");
-    let values = change.values.iter().map(|f| f.value.as_ref().map_or(Value::NULL, |v| Value::Bytes(v.as_bytes().to_vec())));
+    let values = change.values.iter().map(|f| field_param(meta, f));
     let key = change.key.iter().map(cell_param);
     Ok(match change.kind {
         ChangeKind::Update => {
@@ -101,9 +101,24 @@ fn check(meta: &TableMeta, change: &RowChange) -> Result<(), DbyError> {
     Ok(())
 }
 
+/// BIT takes a number: sent as text, `0` would arrive as the byte 0x30.
+fn is_bit(meta: &TableMeta, column: &str) -> bool {
+    meta.index_of(column).is_ok_and(|i| meta.columns[i].data_type == "bit")
+}
+
+fn field_param(meta: &TableMeta, field: &FieldValue) -> Value {
+    match &field.value {
+        None => Value::NULL,
+        Some(v) => match v.parse::<u64>() {
+            Ok(n) if is_bit(meta, &field.column) => Value::UInt(n),
+            _ => Value::Bytes(v.as_bytes().to_vec()),
+        },
+    }
+}
+
 fn field_text(meta: &TableMeta, field: &FieldValue) -> String {
     let Some(v) = &field.value else { return "NULL".into() };
-    let numeric = meta.index_of(&field.column).is_ok_and(|i| is_numeric_type(&meta.columns[i].data_type));
+    let numeric = meta.index_of(&field.column).is_ok_and(|i| is_numeric_type(&meta.columns[i].data_type)) || is_bit(meta, &field.column);
     if numeric && is_plain_decimal(v) {
         v.clone()
     } else {
@@ -166,6 +181,14 @@ mod tests {
         assert_eq!(p.sql, "INSERT INTO `edits` (`id`, `nick`, `qty`) VALUES (?, ?, ?)");
         assert_eq!(p.params.len(), 3);
         assert_eq!(preview(&edits(), &c).unwrap(), "INSERT INTO edits (id, nick, qty)\nVALUES (12, 'a\\\\b', 3);");
+    }
+
+    #[test]
+    fn bit_values_bind_as_numbers() {
+        let meta = TableMeta { columns: vec![col("id", "int", false), col("flag", "bit", true)], pk: vec![0] };
+        let c = RowChange { table: "t".into(), kind: ChangeKind::Update, key: vec![Cell::Signed { v: 1 }], values: vec![set("flag", Some("0"))] };
+        assert_eq!(prepare(&meta, &c).unwrap().params[0], Value::UInt(0));
+        assert_eq!(preview(&meta, &c).unwrap(), "UPDATE t\nSET flag = 0\nWHERE id = 1;");
     }
 
     #[test]

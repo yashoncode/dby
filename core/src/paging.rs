@@ -138,14 +138,33 @@ pub struct Order {
 }
 
 pub fn order_of(meta: &TableMeta, sort: Option<&Sort>) -> Result<Order, DbyError> {
+    let key_safe = !meta.pk.is_empty() && meta.pk.iter().all(|&i| keyset_safe(&meta.columns[i].data_type));
     let Some(sort) = sort else {
-        return Ok(Order { columns: meta.pk.clone(), descending: false, keyset: !meta.pk.is_empty() });
+        return Ok(Order { columns: meta.pk.clone(), descending: false, keyset: key_safe });
     };
     let first = meta.index_of(&sort.column)?;
     let mut columns = vec![first];
-    columns.extend(meta.pk.iter().copied().filter(|&i| i != first));
-    let keyset = !meta.pk.is_empty() && !meta.columns[first].nullable;
+    if meta.pk.is_empty() {
+        // No key to break ties, and tied rows may come back in any order between pages: break
+        // them with every other short column.
+        columns.extend((0..meta.columns.len()).filter(|&i| i != first && trim_with(&meta.columns[i]).is_none()));
+    } else {
+        columns.extend(meta.pk.iter().copied().filter(|&i| i != first));
+    }
+    let column = &meta.columns[first];
+    let keyset = key_safe && !column.nullable && keyset_safe(&column.data_type);
     Ok(Order { columns, descending: sort.descending, keyset })
+}
+
+/// Types whose ORDER BY order is the order a row comparison against a literal gives. ENUM and
+/// SET sort by position but compare as text, a FLOAT literal is not the stored value, and JSON
+/// compares by type: those page by offset.
+fn keyset_safe(data_type: &str) -> bool {
+    matches!(
+        data_type,
+        "tinyint" | "smallint" | "mediumint" | "int" | "integer" | "bigint" | "decimal" | "numeric" | "date" | "datetime"
+            | "timestamp" | "time" | "year" | "char" | "varchar" | "binary" | "varbinary"
+    )
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -171,8 +190,8 @@ pub fn page_sql(meta: &TableMeta, spec: &PageSpec) -> Result<PageSql, DbyError> 
     let mut trimmed = Vec::with_capacity(meta.columns.len());
     for (index, column) in meta.columns.iter().enumerate() {
         let quoted = quote_ident(&column.name);
-        // Ordering columns are sent whole: the next cursor is built from them.
-        match trim_with(column).filter(|_| !order.columns.contains(&index)) {
+        // Keyset ordering columns are sent whole: the next cursor is built from them.
+        match trim_with(column).filter(|_| !(order.keyset && order.columns.contains(&index))) {
             Some(length_fn) => {
                 select.push(format!("LEFT({quoted}, {TRIM}), {length_fn}({quoted})"));
                 trimmed.push(true);
@@ -552,16 +571,41 @@ mod tests {
     }
 
     #[test]
-    fn sorting_by_a_nullable_column_falls_back_to_offset_and_sends_it_whole() {
+    fn sorting_by_a_nullable_column_falls_back_to_offset_and_still_trims_it() {
         let sort = Sort { column: "notes".into(), descending: false };
         assert!(!order_of(&orders(), Some(&sort)).unwrap().keyset);
         let cursor = Cursor { after: vec![], offset: 20 };
         let built = page(&orders(), "orders", &[], Some(&sort), Some(&cursor), 10);
         assert_eq!(
             built.sql,
-            "SELECT `id`, `customer`, `status`, `total`, `notes`, `created_at` FROM `orders` \
-             ORDER BY `notes`, `id` LIMIT 11 OFFSET 20"
+            "SELECT `id`, `customer`, `status`, `total`, LEFT(`notes`, 256), CHAR_LENGTH(`notes`), `created_at` \
+             FROM `orders` ORDER BY `notes`, `id` LIMIT 11 OFFSET 20"
         );
+    }
+
+    #[test]
+    fn enum_float_and_json_sorts_page_by_offset() {
+        let meta = TableMeta {
+            columns: vec![col("id", "int", None), col("state", "enum", Some(7)), col("score", "float", None), col("doc", "json", None)],
+            pk: vec![0],
+        };
+        for column in ["state", "score", "doc"] {
+            let order = order_of(&meta, Some(&Sort { column: column.into(), descending: false })).unwrap();
+            assert!(!order.keyset, "{column}");
+            assert_eq!(order.columns[1], 0, "{column}: the key still breaks ties");
+        }
+        let float_key = TableMeta { columns: vec![col("x", "double", None)], pk: vec![0] };
+        assert!(!order_of(&float_key, None).unwrap().keyset);
+    }
+
+    #[test]
+    fn tables_without_a_key_break_sort_ties_with_their_other_short_columns() {
+        let meta = TableMeta {
+            columns: vec![col("a", "int", None), col("b", "varchar", Some(10)), col("body", "text", None), col("c", "date", None)],
+            pk: vec![],
+        };
+        let order = order_of(&meta, Some(&Sort { column: "b".into(), descending: true })).unwrap();
+        assert_eq!(order, Order { columns: vec![1, 0, 3], descending: true, keyset: false });
     }
 
     #[test]
