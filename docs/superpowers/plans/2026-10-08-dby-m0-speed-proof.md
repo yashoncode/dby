@@ -2919,7 +2919,7 @@ import re
 import statistics
 import sys
 
-LINE = re.compile(r"DBYBENCH app=(\w+) event=(\w+) ms=(\d+)")
+LINE = re.compile(r"DBYBENCH:? app=(\w+) event=(\w+) ms=(\d+)")
 JANK = re.compile(r"Janky frames: (\d+) \(([\d.]+)%\)")
 EVENTS = ["connect", "first_page", "next_page", "sql"]
 
