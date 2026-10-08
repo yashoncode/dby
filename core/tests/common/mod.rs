@@ -2,7 +2,7 @@
 
 use std::sync::Arc;
 
-use dby_core::{open_session, ConnectParams, Session, TlsMode};
+use dby_core::{open_session, ConnectParams, PageRequest, Session, TlsMode};
 use mysql_async::prelude::Queryable;
 
 /// Databases from tests/docker-compose.yml. An unset variable skips that target.
@@ -64,4 +64,9 @@ pub async fn column(port: u16, sql: &str) -> Vec<String> {
     let values: Vec<String> = conn.query(sql).await.expect("query");
     conn.disconnect().await.expect("disconnect");
     values
+}
+
+/// A first-page request with no filters or sort.
+pub fn page(table: &str, limit: u32) -> PageRequest {
+    PageRequest { table: table.into(), filters: vec![], sort: None, cursor: None, limit }
 }

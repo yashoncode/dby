@@ -135,6 +135,7 @@ impl Store {
         Store::setup(Connection::open(path)?)
     }
 
+    #[cfg(test)]
     pub fn open_in_memory() -> Result<Store, DbyError> {
         Store::setup(Connection::open_in_memory()?)
     }

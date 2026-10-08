@@ -13,7 +13,9 @@ CREATE TABLE orders (
   status VARCHAR(16) NOT NULL,
   total DECIMAL(12, 2) NOT NULL,
   notes TEXT NULL,
-  created_at DATETIME NOT NULL
+  created_at DATETIME NOT NULL,
+  -- Sorting by created_at is the common case; without an index every sorted page is a filesort.
+  KEY by_created (created_at)
 );
 INSERT INTO orders (id, customer, status, total, notes, created_at)
 SELECT n,
@@ -41,6 +43,20 @@ INSERT INTO pairs SELECT x.d, y.d, CONCAT(x.d, '-', y.d) FROM digits x, digits y
 -- No primary key, 100 rows.
 CREATE TABLE nopk (v INT);
 INSERT INTO nopk SELECT a.d + 10 * b.d FROM digits a, digits b;
+
+-- An ENUM column for facet counts: 34 new, 33 used, 33 broken; label is always NULL.
+CREATE TABLE items (id INT PRIMARY KEY, state ENUM('new', 'used', 'broken') NOT NULL, label VARCHAR(20) NULL);
+INSERT INTO items SELECT a.d + 10 * b.d, ELT(1 + (a.d + 10 * b.d) % 3, 'new', 'used', 'broken'), NULL FROM digits a, digits b;
+
+-- Rows the write tests insert, change and delete; each test uses its own ids.
+CREATE TABLE edits (id INT PRIMARY KEY, name VARCHAR(20) NOT NULL, qty INT NULL);
+
+CREATE VIEW big_orders AS SELECT id, total FROM orders WHERE total > 900;
+CREATE PROCEDURE noop() SELECT 1;
+
+-- A second database for the database switcher.
+CREATE DATABASE archive;
+CREATE TABLE archive.old (id INT PRIMARY KEY);
 
 -- Values that break naive clients. sql_mode is cleared so the zero date is accepted.
 SET SESSION sql_mode = '';

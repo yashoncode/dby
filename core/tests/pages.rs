@@ -8,7 +8,7 @@ async fn all_rows(session: &Session, table: &str, limit: u32) -> Vec<Vec<Cell>> 
     let mut rows = Vec::new();
     for _ in 0..10_000 {
         let page = session
-            .table_page(PageRequest { table: table.into(), cursor: cursor.clone(), limit })
+            .table_page(PageRequest { filters: vec![], sort: None, table: table.into(), cursor: cursor.clone(), limit })
             .await
             .expect("page");
         assert!(page.rows.len() <= limit as usize);
@@ -49,7 +49,7 @@ async fn long_text_is_trimmed_with_its_full_length() {
     for (name, port) in targets() {
         let session = open(port).await;
         let page = session
-            .table_page(PageRequest { table: "orders".into(), cursor: None, limit: 50 })
+            .table_page(PageRequest { filters: vec![], sort: None, table: "orders".into(), cursor: None, limit: 50 })
             .await
             .unwrap();
         let names: Vec<&str> = page.columns.iter().map(|c| c.name.as_str()).collect();
@@ -114,7 +114,7 @@ async fn exact_values_survive() {
     for (name, port) in targets() {
         let session = open(port).await;
         let page = session
-            .table_page(PageRequest { table: "exact_values".into(), cursor: None, limit: 10 })
+            .table_page(PageRequest { filters: vec![], sort: None, table: "exact_values".into(), cursor: None, limit: 10 })
             .await
             .unwrap();
         let row = &page.rows[0];
@@ -142,7 +142,7 @@ async fn unknown_table_is_not_found() {
     for (name, port) in targets() {
         let session = open(port).await;
         let err = session
-            .table_page(PageRequest { table: "no_such_table".into(), cursor: None, limit: 10 })
+            .table_page(PageRequest { filters: vec![], sort: None, table: "no_such_table".into(), cursor: None, limit: 10 })
             .await
             .expect_err("should fail");
         assert!(matches!(err, DbyError::NotFound { .. }), "{name}: {err:?}");
