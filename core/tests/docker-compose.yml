@@ -1,6 +1,8 @@
 # Local test databases for core/tests. From the repo root:
 #   docker compose -f core/tests/docker-compose.yml up -d --wait
 # then set DBY_TEST_MYSQL_PORT=33084 and DBY_TEST_MARIADB_PORT=33114.
+# After changing seed.sql, reseed with: ... up -d --force-recreate --renew-anon-volumes --wait
+# (the images keep their data volume, and init scripts only run on an empty one).
 services:
   mysql:
     image: mysql:8.4

@@ -11,7 +11,8 @@ use mysql_async::{Conn, Opts, OptsBuilder, Row, SslOpts, Value};
 use tokio::sync::Mutex;
 
 use crate::error::{is_connection_lost, DbyError};
-use crate::paging::{self, ColumnRow, TableMeta};
+use crate::paging::{self, ColumnRow, Cursor, TableMeta};
+use crate::value::{self, Cell, ColMeta};
 
 const CONNECT_TIMEOUT: Duration = Duration::from_secs(10);
 
@@ -60,6 +61,32 @@ pub struct ServerInfo {
     pub version: String,
     /// Both logins plus the schema load, in milliseconds.
     pub connect_ms: u32,
+}
+
+/// Largest page the app may ask for.
+const MAX_PAGE: u32 = 1000;
+
+#[derive(Debug, Clone, PartialEq, uniffi::Record)]
+pub struct ColumnOut {
+    pub name: String,
+    pub type_name: String,
+}
+
+#[derive(Debug, Clone, uniffi::Record)]
+pub struct PageRequest {
+    pub table: String,
+    /// None for the first page; afterwards the previous page's `next`.
+    pub cursor: Option<Cursor>,
+    pub limit: u32,
+}
+
+#[derive(Debug, Clone, PartialEq, uniffi::Record)]
+pub struct Page {
+    pub columns: Vec<ColumnOut>,
+    pub rows: Vec<Vec<Cell>>,
+    /// None on the last page.
+    pub next: Option<Cursor>,
+    pub elapsed_ms: u32,
 }
 
 #[derive(uniffi::Object)]
@@ -139,12 +166,64 @@ impl Session {
     }
 }
 
+#[uniffi::export(async_runtime = "tokio")]
+impl Session {
+    /// One page of a table in primary-key order: one round trip, long cells trimmed.
+    pub async fn table_page(&self, req: PageRequest) -> Result<Page, DbyError> {
+        let started = Instant::now();
+        let limit = req.limit.clamp(1, MAX_PAGE);
+        let meta = self
+            .tables
+            .lock()
+            .unwrap()
+            .get(&req.table)
+            .cloned()
+            .ok_or_else(|| DbyError::NotFound { detail: format!("table {}", req.table) })?;
+        let built = paging::page_sql(&req.table, &meta, req.cursor.as_ref(), limit)?;
+        let (columns, raw) = self.read_browse(&built.sql).await?;
+        let metas: Vec<ColMeta> = columns.iter().map(value::meta_of).collect();
+        let mut rows: Vec<Vec<Cell>> = raw.into_iter().map(|row| decode_page_row(row, &metas, &built.trimmed)).collect();
+        let next = if rows.len() > limit as usize {
+            rows.truncate(limit as usize);
+            paging::next_cursor(&meta, req.cursor.as_ref(), &rows, limit)
+        } else {
+            None
+        };
+        Ok(Page {
+            columns: meta.columns.iter().map(|c| ColumnOut { name: c.name.clone(), type_name: c.data_type.clone() }).collect(),
+            rows,
+            next,
+            elapsed_ms: elapsed_ms(started),
+        })
+    }
+}
+
 impl Session {
     /// Server-side ids of (browse, query), for tests that kill connections. Not exported.
     #[doc(hidden)]
     pub async fn debug_connection_ids(&self) -> (u32, u32) {
         let browse = self.browse.lock().await.as_ref().map_or(0, Conn::id);
         (browse, self.query_conn_id.load(Ordering::SeqCst))
+    }
+
+    /// A read on browse. If the server or network dropped the connection, reconnects once and
+    /// retries: every statement browse runs is a read.
+    async fn read_browse(&self, sql: &str) -> Result<(Vec<mysql_async::Column>, Vec<Row>), DbyError> {
+        let mut guard = self.browse.lock().await;
+        let first = match guard.as_mut() {
+            Some(conn) => fetch_all(conn, sql).await,
+            None => return Err(closed()),
+        };
+        match first {
+            Ok(found) => Ok(found),
+            Err(e) if is_connection_lost(&e) => {
+                let mut conn = connect(&self.browse_opts).await?;
+                let found = fetch_all(&mut conn, sql).await;
+                *guard = Some(conn);
+                Ok(found?)
+            }
+            Err(e) => Err(e.into()),
+        }
     }
 }
 
@@ -196,6 +275,34 @@ async fn load_schema(conn: &mut Conn) -> Result<(String, HashMap<String, Arc<Tab
         })
         .collect();
     Ok((version, paging::build_tables(rows)))
+}
+
+async fn fetch_all(conn: &mut Conn, sql: &str) -> Result<(Vec<mysql_async::Column>, Vec<Row>), mysql_async::Error> {
+    let mut result = conn.query_iter(sql).await?;
+    let columns = result.columns().map(|c| c.to_vec()).unwrap_or_default();
+    let rows: Vec<Row> = result.collect().await?;
+    result.drop_result().await?;
+    Ok((columns, rows))
+}
+
+/// Folds each trimmed column's (value, full length) pair back into one cell.
+fn decode_page_row(row: Row, metas: &[ColMeta], trimmed: &[bool]) -> Vec<Cell> {
+    let mut values = row.unwrap().into_iter();
+    let mut metas = metas.iter();
+    trimmed
+        .iter()
+        .map(|&is_trimmed| {
+            let value = values.next().unwrap_or(Value::NULL);
+            let meta = metas.next().copied().unwrap_or(ColMeta::TEXT);
+            let full_len = if is_trimmed {
+                metas.next();
+                values.next().as_ref().and_then(value::as_len)
+            } else {
+                None
+            };
+            value::decode(value, &meta, full_len, false)
+        })
+        .collect()
 }
 
 fn text_at(row: &Row, index: usize) -> Option<String> {
