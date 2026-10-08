@@ -1,18 +1,14 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- The DBY mark: a D whose bowl carries two database-cylinder rings, inside the 66 dp safe zone. -->
+<!-- The DBY mark: three slabs stacked into a D, a database and the letter at once. Top slab in the
+     app's accent. Shifted 3 left so the D's visual centre sits on the icon's centre. -->
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
     android:width="108dp"
     android:height="108dp"
     android:viewportWidth="108"
     android:viewportHeight="108">
-    <path
-        android:pathData="M38,32H52A22,22 0,0 1,52 76H38Z"
-        android:strokeWidth="6.5"
-        android:strokeColor="#FFFFFF"
-        android:strokeLineJoin="round" />
-    <path
-        android:pathData="M38,47Q55.5,54 72.9,47M38,61Q55.5,68 72.9,61"
-        android:strokeWidth="5"
-        android:strokeColor="#FFFFFF"
-        android:strokeLineCap="round" />
+    <group android:translateX="-3">
+        <path android:pathData="M38,32H54A22,22 0,0 1,73.6 44H38Z" android:fillColor="#5AC8FA" />
+        <path android:pathData="M38,48H75.17A22,22 0,0 1,75.17 60H38Z" android:fillColor="#FFFFFF" />
+        <path android:pathData="M38,64H73.6A22,22 0,0 1,54 76H38Z" android:fillColor="#FFFFFF" />
+    </group>
 </vector>

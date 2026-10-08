@@ -40,11 +40,8 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
-import androidx.compose.ui.graphics.StrokeCap
-import androidx.compose.ui.graphics.StrokeJoin
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.drawscope.withTransform
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -156,34 +153,30 @@ fun TabPill(nav: Navigator, backdrop: Backdrop, modifier: Modifier = Modifier) {
 /** The DBY mark: three lines on a rounded teal square. */
 @Composable
 fun Logo(size: Dp = 24.dp) {
-    // The launcher icon's mark (res/drawable/ic_launcher_*), drawn from the same 108-unit
-    // coordinates, cropped to the glyph so it reads at 24 dp.
+    // The launcher icon's mark (res/drawable/ic_launcher_*): three slabs stacked into a D, drawn
+    // from the same 108-unit coordinates and cropped to the mark so it reads at 24 dp.
     Canvas(Modifier.size(size)) {
         val w = this.size.width
-        drawRoundRect(
-            Brush.linearGradient(listOf(Color(0xFF2FB4F0), Color(0xFF6E4BFF)), end = Offset(w, w)),
-            cornerRadius = CornerRadius(w * 0.3f),
-        )
-        val d = Path().apply {
-            moveTo(38f, 32f)
-            lineTo(52f, 32f)
-            arcTo(Rect(30f, 32f, 74f, 76f), -90f, 180f, false)
-            lineTo(38f, 76f)
+        drawRoundRect(Color(0xFF101217), cornerRadius = CornerRadius(w * 0.3f))
+        drawRoundRect(Color(0x1FFFFFFF), cornerRadius = CornerRadius(w * 0.3f), style = Stroke(w / 24f))
+        fun slab(top: Float, bottom: Float) = Path().apply {
+            val r = 22f
+            fun x(y: Float) = 54f + kotlin.math.sqrt(r * r - (y - 54f) * (y - 54f))
+            moveTo(38f, top)
+            lineTo(x(top), top)
+            arcTo(Rect(32f, 32f, 76f, 76f), Math.toDegrees(kotlin.math.asin((top - 54f) / r).toDouble()).toFloat(),
+                Math.toDegrees((kotlin.math.asin((bottom - 54f) / r) - kotlin.math.asin((top - 54f) / r)).toDouble()).toFloat(), false)
+            lineTo(38f, bottom)
             close()
         }
-        val rings = Path().apply {
-            moveTo(38f, 47f)
-            quadraticTo(55.5f, 54f, 72.9f, 47f)
-            moveTo(38f, 61f)
-            quadraticTo(55.5f, 68f, 72.9f, 61f)
-        }
-        val scale = w / 72f
+        val scale = w / 64f
         withTransform({
-            translate(w / 2 - 55.5f * scale, w / 2 - 54f * scale)
+            translate(w / 2 - 57f * scale, w / 2 - 54f * scale) // the D spans x 38..76
             scale(scale, scale, Offset.Zero)
         }) {
-            drawPath(d, Color.White, style = Stroke(6.5f, join = StrokeJoin.Round))
-            drawPath(rings, Color.White, style = Stroke(5f, cap = StrokeCap.Round))
+            drawPath(slab(32f, 44f), Color(0xFF5AC8FA))
+            drawPath(slab(48f, 60f), Color.White)
+            drawPath(slab(64f, 76f), Color.White)
         }
     }
 }
