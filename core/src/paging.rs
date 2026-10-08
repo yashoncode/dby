@@ -52,7 +52,9 @@ pub struct PageSql {
 
 /// Groups schema rows (already in column order) into one `TableMeta` per table.
 pub fn build_tables(rows: Vec<ColumnRow>) -> HashMap<String, Arc<TableMeta>> {
-    let mut building: HashMap<String, (Vec<ColumnInfo>, Vec<(u32, usize)>)> = HashMap::new();
+    // Per table: its columns, and (key sequence, column index) for primary-key columns.
+    type Building = (Vec<ColumnInfo>, Vec<(u32, usize)>);
+    let mut building: HashMap<String, Building> = HashMap::new();
     for row in rows {
         let (columns, keys) = building.entry(row.table).or_default();
         if let Some(seq) = row.pk_seq {
@@ -159,7 +161,7 @@ fn is_plain_decimal(s: &str) -> bool {
         None => (unsigned, None),
     };
     let digits = |part: &str| !part.is_empty() && part.bytes().all(|b| b.is_ascii_digit());
-    digits(int) && frac.map_or(true, digits)
+    digits(int) && frac.is_none_or(digits)
 }
 
 fn hex(bytes: &[u8]) -> String {

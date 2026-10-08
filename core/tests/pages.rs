@@ -144,8 +144,7 @@ async fn unknown_table_is_not_found() {
         let err = session
             .table_page(PageRequest { table: "no_such_table".into(), cursor: None, limit: 10 })
             .await
-            .err()
-            .expect("should fail");
+            .expect_err("should fail");
         assert!(matches!(err, DbyError::NotFound { .. }), "{name}: {err:?}");
     }
 }

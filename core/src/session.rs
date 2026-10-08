@@ -6,6 +6,7 @@ use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::{Arc, Mutex as StdMutex};
 use std::time::{Duration, Instant};
 
+use futures_util::StreamExt;
 use mysql_async::prelude::Queryable;
 use mysql_async::{Conn, Opts, OptsBuilder, Row, SslOpts, Value};
 use tokio::sync::Mutex;
@@ -87,6 +88,26 @@ pub struct Page {
     /// None on the last page.
     pub next: Option<Cursor>,
     pub elapsed_ms: u32,
+}
+
+/// Rows the user's own SQL may return before the core stops reading.
+const ROW_CAP: usize = 1000;
+
+#[derive(Debug, Clone, PartialEq, uniffi::Record)]
+pub struct QueryResult {
+    pub columns: Vec<ColumnOut>,
+    pub rows: Vec<Vec<Cell>>,
+    pub affected_rows: u64,
+    /// True when the result had more than 1000 rows and the rest were not read.
+    pub truncated: bool,
+    pub elapsed_ms: u32,
+}
+
+struct Capped {
+    columns: Vec<ColumnOut>,
+    rows: Vec<Vec<Cell>>,
+    affected_rows: u64,
+    truncated: bool,
 }
 
 #[derive(uniffi::Object)]
@@ -195,6 +216,95 @@ impl Session {
             next,
             elapsed_ms: elapsed_ms(started),
         })
+    }
+}
+
+#[uniffi::export(async_runtime = "tokio")]
+impl Session {
+    /// Runs the user's SQL on the query connection. Stops at 1000 rows; `truncated` says so.
+    pub async fn run_sql(&self, run_id: String, sql: String) -> Result<QueryResult, DbyError> {
+        let started = Instant::now();
+        *self.running.lock().unwrap() = Some(run_id);
+        let outcome = self.run_on_query(&sql).await;
+        *self.running.lock().unwrap() = None;
+        let capped = outcome?;
+        Ok(QueryResult {
+            columns: capped.columns,
+            rows: capped.rows,
+            affected_rows: capped.affected_rows,
+            truncated: capped.truncated,
+            elapsed_ms: elapsed_ms(started),
+        })
+    }
+
+    /// Interrupts `run_id` if it is still running. A finished or unknown run is a no-op.
+    pub async fn cancel(&self, run_id: String) -> Result<(), DbyError> {
+        let is_running = self.running.lock().unwrap().as_deref() == Some(run_id.as_str());
+        if is_running {
+            self.kill_query().await?;
+        }
+        Ok(())
+    }
+}
+
+impl Session {
+    async fn run_on_query(&self, sql: &str) -> Result<Capped, DbyError> {
+        let mut guard = self.query.lock().await;
+        let first = match guard.as_mut() {
+            Some(conn) => self.stream_capped(conn, sql).await,
+            None => return Err(closed()),
+        };
+        match first {
+            Ok(capped) => Ok(capped),
+            // Only reads are re-run: a write may already have committed when the connection died.
+            Err(e) if is_connection_lost(&e) && is_read(sql) => {
+                let mut conn = connect(&self.query_opts).await?;
+                self.query_conn_id.store(conn.id(), Ordering::SeqCst);
+                let capped = self.stream_capped(&mut conn, sql).await;
+                *guard = Some(conn);
+                Ok(capped?)
+            }
+            Err(e) => Err(e.into()),
+        }
+    }
+
+    async fn stream_capped(&self, conn: &mut Conn, sql: &str) -> Result<Capped, mysql_async::Error> {
+        let mut result = conn.query_iter(sql).await?;
+        let columns = result.columns().map(|c| c.to_vec()).unwrap_or_default();
+        let metas: Vec<ColMeta> = columns.iter().map(value::meta_of).collect();
+        let mut rows = Vec::new();
+        let mut truncated = false;
+        if !columns.is_empty() {
+            if let Some(mut stream) = result.stream::<Row>().await? {
+                while let Some(row) = stream.next().await {
+                    let row = row?;
+                    if rows.len() == ROW_CAP {
+                        truncated = true;
+                        break;
+                    }
+                    rows.push(row.unwrap().into_iter().zip(&metas).map(|(v, m)| value::decode(v, m, None, true)).collect());
+                }
+            }
+        }
+        let affected_rows = result.affected_rows();
+        if truncated {
+            // Stop the server instead of draining the rest of a huge result over mobile data.
+            let _ = self.kill_query().await;
+        }
+        match result.drop_result().await {
+            Err(mysql_async::Error::Server(e)) if truncated && e.code == 1317 => {}
+            other => other?,
+        }
+        Ok(Capped { columns: columns.iter().map(column_out).collect(), rows, affected_rows, truncated })
+    }
+
+    /// `KILL QUERY` for the query connection, sent over browse.
+    async fn kill_query(&self) -> Result<(), DbyError> {
+        let id = self.query_conn_id.load(Ordering::SeqCst);
+        let mut guard = self.browse.lock().await;
+        let conn = guard.as_mut().ok_or_else(closed)?;
+        conn.query_drop(format!("KILL QUERY {id}")).await?;
+        Ok(())
     }
 }
 
@@ -318,4 +428,35 @@ pub(crate) fn elapsed_ms(started: Instant) -> u32 {
 
 pub(crate) fn closed() -> DbyError {
     DbyError::internal("session is disconnected")
+}
+
+fn column_out(col: &mysql_async::Column) -> ColumnOut {
+    let type_name = format!("{:?}", col.column_type());
+    ColumnOut {
+        name: col.name_str().into_owned(),
+        type_name: type_name.trim_start_matches("MYSQL_TYPE_").to_ascii_lowercase(),
+    }
+}
+
+/// True only for statements that cannot change data, so re-running one after a dropped
+/// connection is safe. `WITH` is excluded because `WITH ... DELETE` exists.
+// ponytail: first-keyword check; M1's sqlparser classifier replaces it.
+fn is_read(sql: &str) -> bool {
+    let first = sql.trim_start().split(|c: char| c.is_whitespace() || c == '(').next().unwrap_or("");
+    ["select", "show", "describe", "desc", "explain"].iter().any(|k| first.eq_ignore_ascii_case(k))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::is_read;
+
+    #[test]
+    fn only_plain_reads_are_retryable() {
+        for sql in ["SELECT 1", "  select * from t", "SHOW TABLES", "describe t", "DESC t", "EXPLAIN SELECT 1", "SELECT(1)"] {
+            assert!(is_read(sql), "{sql}");
+        }
+        for sql in ["INSERT INTO t VALUES (1)", "UPDATE t SET x = 1", "WITH a AS (SELECT 1) DELETE FROM t", "/* c */ SELECT 1", "CALL p()", ""] {
+            assert!(!is_read(sql), "{sql}");
+        }
+    }
 }
