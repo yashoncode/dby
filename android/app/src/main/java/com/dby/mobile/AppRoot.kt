@@ -25,6 +25,10 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import com.dby.mobile.ui.history.HistoryScreen
+import com.dby.mobile.ui.query.QueryScreen
+import com.dby.mobile.ui.settings.LicencesScreen
+import com.dby.mobile.ui.settings.SettingsScreen
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
@@ -75,18 +79,13 @@ fun AppRoot(app: DbyApp) {
                 is Screen.EditConnection -> EditConnectionScreen(app, screen.id)
                 is Screen.Explorer -> ExplorerScreen(app, screen.connectionId)
                 is Screen.Table -> TableScreen(app, screen.connectionId, screen.table)
-                Screen.Query -> Placeholder("Query")
-                Screen.History -> Placeholder("History")
-                Screen.Settings -> Placeholder("Settings")
-                Screen.Licences -> Placeholder("Licences")
+                Screen.Query -> QueryScreen(app)
+                Screen.History -> HistoryScreen(app)
+                Screen.Settings -> SettingsScreen(app)
+                Screen.Licences -> LicencesScreen(app)
             }
         }
     }
-}
-
-@Composable
-private fun Placeholder(text: String) {
-    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { Text(text, style = Type.Title) }
 }
 
 /** Space under scrolling content for the floating tab pill and the gesture bar. */
