@@ -2,8 +2,12 @@
 
 uniffi::setup_scaffolding!();
 
+mod error;
+mod paging;
 mod value;
 
+pub use error::DbyError;
+pub use paging::Cursor;
 pub use value::Cell;
 
 /// The core's version, shown by the app so a stale native library is easy to spot.
