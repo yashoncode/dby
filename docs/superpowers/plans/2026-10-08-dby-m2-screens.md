@@ -199,6 +199,8 @@ dependencies {
     implementation("net.java.dev.jna:jna:5.19.1@aar")
     // Liquid and frosted glass (Apache-2.0). Replaces Haze: one capture per screen serves both.
     implementation("io.github.kyant0:backdrop:2.0.1")
+    // backdrop declares its shapes dependency as runtime-only; the glass code names its shapes.
+    implementation("io.github.kyant0:shapes:1.2.1")
     testImplementation("junit:junit:4.13.2")
 }
 ```
@@ -1459,7 +1461,9 @@ package com.dby.mobile
 import android.os.Bundle
 import android.util.Log
 import android.view.WindowManager
+import android.graphics.Color
 import androidx.activity.ComponentActivity
+import androidx.activity.SystemBarStyle
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import com.dby.core.coreVersion
@@ -1469,7 +1473,8 @@ import java.lang.ref.WeakReference
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        enableEdgeToEdge()
+        // The app is always dark, so the system bars keep light icons even when the phone is in light mode.
+        enableEdgeToEdge(SystemBarStyle.dark(Color.TRANSPARENT), SystemBarStyle.dark(Color.TRANSPARENT))
         Log.i("DBYBENCH", "app=dby event=boot core=${coreVersion()}")
         val app = DbyApp.instance
         // With App lock on, the app's screen is hidden from screenshots and the recents list.
@@ -1501,7 +1506,7 @@ import androidx.compose.animation.animateColorAsState
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.layout.Alignment
+import androidx.compose.ui.Alignment
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column

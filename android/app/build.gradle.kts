@@ -7,7 +7,7 @@ plugins {
 
 android {
     namespace = "com.dby.mobile"
-    // 37: Haze 2 and the Compose alpha BOM require it. targetSdk stays 36.
+    // 37: the Compose alpha BOM requires it. targetSdk stays 36.
     compileSdk = 37
     ndkVersion = "30.0.16248370"
 
@@ -15,8 +15,8 @@ android {
         applicationId = "com.dby.mobile"
         minSdk = 26
         targetSdk = 36
-        versionCode = 1
-        versionName = "0.0.1-m0"
+        versionCode = 10
+        versionName = "0.1.0"
         ndk {
             abiFilters.addAll(listOf("arm64-v8a", "x86_64"))
         }
@@ -25,19 +25,26 @@ android {
     buildTypes {
         release {
             isMinifyEnabled = true
+            isShrinkResources = true
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
-            // M0 benchmark builds only. M3 adds the real release key.
+            // M3 replaces this with the release key.
             signingConfig = signingConfigs.getByName("debug")
         }
     }
 
     buildFeatures {
         compose = true
+        buildConfig = true
     }
 
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
+    }
+
+    // Compose's snapshot state calls android.os.Trace, which the JVM test stubs would throw on.
+    testOptions {
+        unitTests.isReturnDefaultValues = true
     }
 }
 
@@ -97,10 +104,12 @@ dependencies {
     implementation("androidx.compose.foundation:foundation")
     implementation("androidx.compose.material3:material3")
     implementation("androidx.activity:activity-compose:1.13.0")
-    implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.11.0")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.11.0")
     // UniFFI's Kotlin bindings call the Rust library through JNA.
     implementation("net.java.dev.jna:jna:5.19.1@aar")
-    implementation("dev.chrisbanes.haze:haze:2.0.1")
-    implementation("dev.chrisbanes.haze:haze-blur:2.0.1")
+    // Liquid and frosted glass (Apache-2.0). Replaces Haze: one capture per screen serves both.
+    implementation("io.github.kyant0:backdrop:2.0.1")
+    // backdrop declares its shapes dependency as runtime-only; the glass code names its shapes.
+    implementation("io.github.kyant0:shapes:1.2.1")
+    testImplementation("junit:junit:4.13.2")
 }
