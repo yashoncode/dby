@@ -40,6 +40,8 @@ import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.dby.mobile.data.AppLock
+import com.dby.mobile.ui.connections.ConnectionsScreen
+import com.dby.mobile.ui.connections.EditConnectionScreen
 import com.dby.mobile.ui.DbyIcons
 import com.dby.mobile.ui.glass.GlassHost
 import com.dby.mobile.ui.glass.liquidGlass
@@ -67,8 +69,8 @@ fun AppRoot(app: DbyApp) {
     ) {
         key(nav.tab, nav.current) {
             when (val screen = nav.current) {
-                Screen.Connections -> Placeholder("Connections")
-                is Screen.EditConnection -> Placeholder("Edit connection")
+                Screen.Connections -> ConnectionsScreen(app)
+                is Screen.EditConnection -> EditConnectionScreen(app, screen.id)
                 is Screen.Explorer -> Placeholder("Explorer ${screen.connectionId}")
                 is Screen.Table -> Placeholder("Table ${screen.table}")
                 Screen.Query -> Placeholder("Query")

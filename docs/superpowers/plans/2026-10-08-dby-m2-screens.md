@@ -974,6 +974,8 @@ import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
@@ -1504,6 +1506,7 @@ import androidx.activity.compose.BackHandler
 import androidx.activity.compose.LocalActivity
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.background
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.ui.Alignment
@@ -2904,7 +2907,7 @@ fun EditConnectionScreen(app: DbyApp, id: String?) {
         },
     ) {
         Column(
-            Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(top = topSpace()).navigationBarsPadding().imePadding().padding(bottom = 24.dp),
+            Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(top = topSpace()).navigationBarsPadding().imePadding().padding(bottom = 96.dp),
             verticalArrangement = Arrangement.spacedBy(0.dp),
         ) {
             TopBar(onBack = { nav.back() })
@@ -2938,10 +2941,6 @@ fun EditConnectionScreen(app: DbyApp, id: String?) {
             )
             model.tested?.let { Text(it, style = Type.Secondary.copy(fontWeight = FontWeight.SemiBold), color = Dby.Success, modifier = Modifier.padding(horizontal = 20.dp, vertical = 8.dp)) }
             model.problem?.let { ProblemBanner(it, modifier = Modifier.padding(vertical = 8.dp)) }
-            Row(Modifier.padding(horizontal = 16.dp, vertical = 16.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                SecondaryButton("Test", model::test, Modifier.weight(1f), enabled = model.valid, busy = model.busy)
-                PrimaryButton("Save", { model.save { nav.back() } }, Modifier.weight(1.4f), enabled = model.valid && !model.busy)
-            }
             if (!model.isNew) {
                 Text(
                     "Delete connection",
@@ -2950,6 +2949,20 @@ fun EditConnectionScreen(app: DbyApp, id: String?) {
                     modifier = Modifier.align(Alignment.CenterHorizontally).padding(12.dp).clickable { model.deleting = true },
                 )
             }
+        }
+        // Test and Save stay on screen above the gesture bar and the keyboard.
+        Row(
+            Modifier
+                .align(Alignment.BottomCenter)
+                .fillMaxWidth()
+                .background(Brush.verticalGradient(0f to Color.Transparent, 0.2f to Dby.Bg))
+                .navigationBarsPadding()
+                .imePadding()
+                .padding(horizontal = 16.dp, vertical = 12.dp),
+            horizontalArrangement = Arrangement.spacedBy(10.dp),
+        ) {
+            SecondaryButton("Test", model::test, Modifier.weight(1f), enabled = model.valid, busy = model.busy)
+            PrimaryButton("Save", { model.save { nav.back() } }, Modifier.weight(1.4f), enabled = model.valid && !model.busy)
         }
     }
 }
