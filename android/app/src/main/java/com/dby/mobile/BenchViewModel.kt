@@ -67,7 +67,7 @@ class BenchViewModel(app: Application) : AndroidViewModel(app) {
 
     fun openTable() = timed("first_page") {
         val s = requireSession()
-        val page = s.tablePage(PageRequest(table.trim(), null, PAGE_SIZE))
+        val page = s.tablePage(PageRequest(table.trim(), emptyList(), null, null, PAGE_SIZE))
         show(page)
         prefetch(s)
         "${table.trim()} · page 1"
@@ -87,7 +87,7 @@ class BenchViewModel(app: Application) : AndroidViewModel(app) {
         val id = UUID.randomUUID().toString()
         runId = id
         try {
-            val result = s.runSql(id, sql)
+            val result = s.runSql(id, sql, true)
             columns = result.columns
             rows.clear()
             rows.addAll(result.rows)
@@ -162,6 +162,6 @@ class BenchViewModel(app: Application) : AndroidViewModel(app) {
     private fun prefetch(s: Session) {
         val cursor = nextCursor
         val name = table.trim()
-        prefetched = if (cursor == null) null else viewModelScope.async { s.tablePage(PageRequest(name, cursor, PAGE_SIZE)) }
+        prefetched = if (cursor == null) null else viewModelScope.async { s.tablePage(PageRequest(name, emptyList(), null, cursor, PAGE_SIZE)) }
     }
 }
