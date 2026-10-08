@@ -1,0 +1,5 @@
+# Keep LF in the repo so gradlew and shell scripts run on Linux/macOS CI.
+* text=auto eol=lf
+*.bat text eol=crlf
+*.jar binary
+*.pem text eol=lf

@@ -82,7 +82,7 @@ DBY/
 | Layer | Choice |
 |---|---|
 | Language / UI | Kotlin 2, Jetpack Compose, Material 3 as a base under a custom theme, Navigation Compose |
-| Android levels | minSdk 26, compileSdk 36, targetSdk 36 |
+| Android levels | minSdk 26, compileSdk 37 (Haze 2 and the Compose BOM require it), targetSdk 36 |
 | Glass | Haze 2.0.1 (`dev.chrisbanes.haze`); Kyant0/AndroidLiquidGlass `io.github.kyant0:backdrop` (Apache-2.0) |
 | Fonts | Geist, Geist Mono (OFL-1.1), bundled in `res/font` |
 | SQL editor | sora-editor (LGPL-2.1, used unmodified as a library dependency) with a TextMate MySQL grammar |
