@@ -16,10 +16,19 @@ pub enum DbyError {
     Server { code: u16, detail: String },
     #[error("not found: {detail}")]
     NotFound { detail: String },
+    /// A write was refused: the session is read-only, or the write was not confirmed.
+    #[error("blocked: {detail}")]
+    ReadOnlyBlocked { detail: String },
+    /// A row change matched `affected` rows instead of exactly one, so it was rolled back.
+    #[error("the change matched {affected} rows instead of 1, so it was rolled back")]
+    RowEditMismatch { affected: u64 },
     #[error("cancelled")]
     Cancelled,
     #[error("timed out")]
     Timeout,
+    /// The phone's own database failed.
+    #[error("local storage failed: {detail}")]
+    Storage { detail: String },
     #[error("internal error: {detail}")]
     Internal { detail: String },
 }
@@ -37,6 +46,10 @@ impl From<Error> for DbyError {
                 1045 | 1698 => DbyError::Auth { detail: s.message },
                 1049 => DbyError::UnknownDatabase { detail: s.message },
                 1317 => DbyError::Cancelled,
+                // "Cannot execute statement in a READ ONLY transaction."
+                1792 => DbyError::ReadOnlyBlocked { detail: s.message },
+                // MySQL's MAX_EXECUTION_TIME and MariaDB's max_statement_time.
+                3024 | 1969 => DbyError::Timeout,
                 code => DbyError::Server { code, detail: s.message },
             },
             Error::Driver(DriverError::NoClientSslFlagFromServer) => {
@@ -58,6 +71,18 @@ impl From<Error> for DbyError {
     }
 }
 
+impl From<rusqlite::Error> for DbyError {
+    fn from(e: rusqlite::Error) -> Self {
+        DbyError::Storage { detail: e.to_string() }
+    }
+}
+
+impl From<serde_json::Error> for DbyError {
+    fn from(e: serde_json::Error) -> Self {
+        DbyError::Storage { detail: e.to_string() }
+    }
+}
+
 /// True when the connection itself is gone (network drop, server restart, `KILL`, idle
 /// timeout), as opposed to an error in the statement. Codes: 1053 server shutdown,
 /// 1927 MariaDB connection killed, 3169 MySQL session killed, 4031 MySQL idle disconnect.
@@ -67,5 +92,25 @@ pub(crate) fn is_connection_lost(e: &Error) -> bool {
         Error::Driver(DriverError::ConnectionClosed) => true,
         Error::Server(s) => matches!(s.code, 1053 | 1927 | 3169 | 4031),
         _ => false,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use mysql_async::ServerError;
+
+    fn server(code: u16) -> DbyError {
+        Error::Server(ServerError { code, message: "m".into(), state: "HY000".into() }).into()
+    }
+
+    #[test]
+    fn server_codes_map_to_the_variants_the_app_handles() {
+        assert!(matches!(server(1045), DbyError::Auth { .. }));
+        assert!(matches!(server(1792), DbyError::ReadOnlyBlocked { .. }));
+        assert!(matches!(server(3024), DbyError::Timeout));
+        assert!(matches!(server(1969), DbyError::Timeout));
+        assert!(matches!(server(1317), DbyError::Cancelled));
+        assert!(matches!(server(1146), DbyError::Server { code: 1146, .. }));
     }
 }

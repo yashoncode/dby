@@ -2,6 +2,7 @@
 
 uniffi::setup_scaffolding!();
 
+mod classify;
 mod error;
 mod paging;
 mod session;
