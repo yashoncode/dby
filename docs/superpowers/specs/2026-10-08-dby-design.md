@@ -109,24 +109,29 @@ fn list_connections() -> Vec<SavedConnection>;
 fn save_connection(input: ConnectionInput) -> Result<SavedConnection, DbyError>; // password arrives already encrypted
 fn delete_connection(id: String) -> Result<(), DbyError>;
 
-// sessions
-async fn connect(id: String, password: String) -> Result<ServerInfo, DbyError>;
-async fn disconnect(id: String);
-async fn ping(id: String) -> Result<u32, DbyError>;                   // ms, used on app resume
-
-// schema
+// sessions: Kotlin holds the returned object and calls close() when done
+async fn connect(id: String, password: String) -> Result<Arc<Session>, DbyError>;
 fn cached_schema(id: String, database: String) -> Option<Schema>;    // local, instant
-async fn refresh_schema(id: String, database: String) -> Result<Schema, DbyError>;
 
-// browsing
-async fn table_page(id: String, req: PageRequest) -> Result<Page, DbyError>;
-async fn count_rows(id: String, req: CountRequest) -> Result<Option<u64>, DbyError>; // None = timed out
+#[derive(uniffi::Object)]
+struct Session { /* browse + query connections, see §6 */ }
 
-// SQL
-async fn run_sql(id: String, run_id: String, sql: String, allow_write: bool) -> Result<QueryResult, DbyError>;
-async fn cancel(id: String, run_id: String) -> Result<(), DbyError>;
-fn preview_row_edit(id: String, edit: RowEdit) -> Result<String, DbyError>; // the exact SQL to show
-async fn apply_row_edit(id: String, edit: RowEdit) -> Result<u64, DbyError>;
+impl Session {
+    fn server_info(&self) -> ServerInfo;
+    async fn ping(&self) -> Result<u32, DbyError>;                    // ms, used on app resume
+    async fn refresh_schema(&self) -> Result<Schema, DbyError>;
+    async fn table_page(&self, req: PageRequest) -> Result<Page, DbyError>;
+    async fn count_rows(&self, req: CountRequest) -> Result<Option<u64>, DbyError>; // None = timed out
+    async fn run_sql(&self, run_id: String, sql: String, allow_write: bool) -> Result<QueryResult, DbyError>;
+    async fn cancel(&self, run_id: String) -> Result<(), DbyError>;
+    fn preview_row_edit(&self, edit: RowEdit) -> Result<String, DbyError>; // the exact SQL to show
+    async fn apply_row_edit(&self, edit: RowEdit) -> Result<u64, DbyError>;
+    async fn disconnect(&self);   // not `close`: UniFFI's Kotlin objects already define close()
+}
+
+// M0 only, before the store exists: open a Session straight from parameters.
+// M1's connect(id, password) builds the same ConnectParams from the store and calls this.
+async fn open_session(params: ConnectParams) -> Result<Arc<Session>, DbyError>;
 
 // history and saved queries (local)
 fn history(limit: u32) -> Vec<HistoryEntry>;
@@ -140,9 +145,9 @@ fn delete_saved_query(sql: String) -> Result<(), DbyError>;
 ```rust
 enum Cell {
     Null,
-    Int { v: i64 },
-    UInt { v: u64 },
-    Float { v: f64 },                               // FLOAT / DOUBLE only
+    Signed { v: i64 },                              // names avoid clashing with Kotlin's Int/UInt/Float
+    Unsigned { v: u64 },
+    Real { v: f64 },                                // FLOAT / DOUBLE only
     Exact { v: String },                            // DECIMAL, and any integer that does not fit the above
     Text { v: String, full_len: u64 },              // full_len is in characters; more than v's character count means the server trimmed it
     Temporal { v: String },                         // DATE / TIME / DATETIME / TIMESTAMP as ISO-8601 text
@@ -183,9 +188,14 @@ Every rule exists to remove a round trip or a byte that TevelMobile spends.
    length), `COLUMNS` (name, type, nullability, key, ordinal), `ROUTINES` (count). Row counts shown
    from it are labelled as estimates (`~`).
 7. **Keyset paging.** Table pages are
-   `SELECT <cols> FROM t WHERE (<sort>, <pk>) > (?, ?) ORDER BY <sort>, <pk> LIMIT 51`
-   as a prepared statement (binary protocol). The 51st row only tells whether a next page exists.
-   Tables without a primary key fall back to `LIMIT/OFFSET` and say so in the pager.
+   `SELECT <cols> FROM t WHERE (<sort>, <pk>) > (<v1>, <v2>) ORDER BY <sort>, <pk> LIMIT 51`
+   sent as one text-protocol query, so every page is exactly one round trip (a prepared statement
+   would cost an extra prepare round trip the first time). Cursor values are written by the core as
+   injection-proof literals that do not depend on `sql_mode`: integers and decimals as validated
+   digits, strings as `_utf8mb4 X'<hex>'` (compared under the column's own collation), binary
+   values as `X'<hex>'`. The 51st row only tells whether a next page exists. Tables without a
+   primary key fall back to `LIMIT/OFFSET` and say so in the pager. M0 pages by primary key only;
+   the extra sort column arrives in M1.
 8. **Prefetch.** When a page is shown, the next page is requested immediately on *browse* and held
    in memory. Going back uses the pages already held.
 9. **Trimmed cells.** In page queries, `TEXT`, `JSON` and `VARCHAR` columns longer than 256 are
@@ -250,7 +260,9 @@ reconnects silently; a reconnect failure shows the reconnect banner.
 `DbyError` variants: `Network` (could not reach host), `Tls` (handshake or verification),
 `Auth` (wrong user/password, plugin not supported), `UnknownDatabase`, `Server { code, message }`
 (any other MySQL error, code kept), `ReadOnlyBlocked`, `RowEditMismatch { affected }`,
-`Cancelled`, `Timeout`, `Storage` (local rusqlite), `Internal`.
+`Cancelled`, `Timeout`, `Storage` (local rusqlite), `Internal`. Text fields on variants are named
+`detail`, never `message`, because UniFFI turns `DbyError` into a Kotlin exception and `message`
+would clash with `Throwable.message`.
 
 Kotlin maps each to one short sentence plus the raw server message behind a "Details" tap, the way
 TevelMobile's `readableError` does, but by variant instead of regex.
