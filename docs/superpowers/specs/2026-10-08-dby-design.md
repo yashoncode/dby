@@ -312,7 +312,7 @@ Three materials. Every surface in the app uses exactly one.
 | Material | How | Used for |
 |---|---|---|
 | **Liquid glass** | `drawBackdrop` from Kyant0 backdrop: saturation ×1.5, blur 8 dp, lens (refraction height 24 dp, amount 24 dp, depth effect, chromatic aberration) on API 33+, highlight and shadow defaults, surface tint `#121212` at 40%, backdrop sampled at 0.33 scale | Bottom tab pill, floating round buttons in top bars (back, actions), Query tab's floating Save button |
-| **Frosted glass** | Haze `hazeEffect`: blur 24 dp, tint `rgba(28,28,33,0.5)`, saturation 1.8, input scale fixed 0.33 | Pager bar on Table data, Edit row sheet, Update sheet, the bounded strip under the top bar where content scrolls |
+| **Frosted glass** | Haze `hazeBlur`: blur 24 dp, background colour `#0B0B0E` (the screen background sits outside the captured source, so without it translucent rows blur to nothing and sharp content shows through), tint `rgba(28,28,33,0.5)`, saturation 1.8, input scale fixed 0.33 | Pager bar on Table data, Edit row sheet, Update sheet, the bounded strip under the top bar where content scrolls |
 | **Light glass** | No capture, no blur: fill `rgba(28,28,33,0.5)`, top highlight `rgba(255,255,255,0.10)` 1 dp, 0.5 dp border `rgba(255,255,255,0.14)` | All cards and grouped lists, search fields, chips, segmented controls, the SQL editor box |
 
 The canvas currently draws blur on every card. On the flat `#0B0B0E` background a blur has

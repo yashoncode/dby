@@ -2706,6 +2706,7 @@ private val StripeBg = Color(0x09FFFFFF)
 /** The frosted material from spec §11, used here to measure blur cost over a scrolling grid. */
 private val PillStyle = HazeBlurStyle {
     blurRadius(24.dp)
+    backgroundColor(Bg)
     colorEffects(listOf(HazeColorEffect.tint(Color(0x801C1C21))))
 }
 
