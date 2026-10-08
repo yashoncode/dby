@@ -285,4 +285,3 @@ fun FilterOp.symbol(): String = when (this) {
     FilterOp.IS_NOT_NULL -> "not null"
 }
 
-class RowEditor(val model: TableModel, val rowIndex: Int?)

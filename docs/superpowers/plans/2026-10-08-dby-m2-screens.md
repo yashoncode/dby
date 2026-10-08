@@ -4342,8 +4342,9 @@ class RowEditor(val model: TableModel, val rowIndex: Int?) {
         return values[i]?.isTrimmed() != true
     }
 
+    /** Compared with the value as last read: the page's cell, or the full value once loaded. */
     fun changed(i: Int): Boolean {
-        val before = original?.get(i) ?: return nulls[i] || texts[i].isNotEmpty()
+        val before = values[i] ?: return nulls[i] || texts[i].isNotEmpty()
         return nulls[i] != (before is Cell.Null) || (!nulls[i] && texts[i] != before.rawText().orEmpty())
     }
 
@@ -4436,7 +4437,8 @@ fun RowSheet(editor: RowEditor, backdrop: Backdrop) {
     val model = editor.model
     val context = LocalContext.current
     val close = { model.editor = null }
-    val change by remember { derivedStateOf { editor.change() } }
+    // Keyed: Duplicate swaps in a new editor at the same call site.
+    val change by remember(editor) { derivedStateOf { editor.change() } }
     val sql = editor.preview(change)
     Sheet(backdrop, close) {
         val keyText = editor.key().joinToString(", ") { it.display() }
@@ -4663,10 +4665,10 @@ fun CellViewer(model: TableModel, row: Int, column: Int, backdrop: Backdrop, onD
     val context = LocalContext.current
     val name = model.columns[column].name
     val shown = model.rows[row][column]
-    var cell by remember { mutableStateOf(shown) }
-    var problem by remember { mutableStateOf<Throwable?>(null) }
+    var cell by remember(row, column) { mutableStateOf(shown) }
+    var problem by remember(row, column) { mutableStateOf<Throwable?>(null) }
     var pretty by remember { mutableStateOf(true) }
-    LaunchedEffect(Unit) {
+    LaunchedEffect(row, column) {
         val session = model.session
         val keys = model.defs.withIndex().filter { it.value?.pkSeq != null }.sortedBy { it.value!!.pkSeq }.map { model.rows[row][it.index] }
         if (shown.isTrimmed() && session != null && keys.isNotEmpty()) {

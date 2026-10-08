@@ -320,8 +320,3 @@ private fun shareCsv(context: Context, table: String, text: String) {
     context.startActivity(Intent.createChooser(send, "Export $table"))
 }
 
-@Composable
-private fun RowSheet(editor: RowEditor, backdrop: Backdrop) = Sheet(backdrop, { editor.model.editor = null }) { Text("Row ${editor.rowIndex}") }
-
-@Composable
-private fun CellViewer(model: TableModel, row: Int, column: Int, backdrop: Backdrop, onDismiss: () -> Unit) = Sheet(backdrop, onDismiss) { Text(model.rows[row][column].display()) }
