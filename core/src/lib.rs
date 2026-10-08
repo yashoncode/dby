@@ -2,6 +2,10 @@
 
 uniffi::setup_scaffolding!();
 
+mod value;
+
+pub use value::Cell;
+
 /// The core's version, shown by the app so a stale native library is easy to spot.
 #[uniffi::export]
 pub fn core_version() -> String {
