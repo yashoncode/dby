@@ -1,0 +1,28 @@
+# Local test databases for core/tests. From the repo root:
+#   docker compose -f core/tests/docker-compose.yml up -d --wait
+# then set DBY_TEST_MYSQL_PORT=33084 and DBY_TEST_MARIADB_PORT=33114.
+services:
+  mysql:
+    image: mysql:8.4
+    environment:
+      MYSQL_ROOT_PASSWORD: dbytest
+      MYSQL_DATABASE: shop
+    ports: ["33084:3306"]
+    volumes: ["./seed.sql:/docker-entrypoint-initdb.d/seed.sql:ro"]
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "127.0.0.1", "-uroot", "-pdbytest"]
+      interval: 2s
+      timeout: 5s
+      retries: 90
+  mariadb:
+    image: mariadb:11.4
+    environment:
+      MARIADB_ROOT_PASSWORD: dbytest
+      MARIADB_DATABASE: shop
+    ports: ["33114:3306"]
+    volumes: ["./seed.sql:/docker-entrypoint-initdb.d/seed.sql:ro"]
+    healthcheck:
+      test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]
+      interval: 2s
+      timeout: 5s
+      retries: 90
