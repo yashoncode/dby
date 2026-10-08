@@ -64,7 +64,8 @@ class Updater(private val context: Context, private val prefs: Prefs, private va
         data object UpToDate : State
         data class Available(val release: Release) : State
         data class Downloading(val release: Release, val fraction: Float) : State
-        data class Ready(val release: Release, val file: File) : State
+        /** [message]: why the last install attempt stopped; the file is kept for another try. */
+        data class Ready(val release: Release, val file: File, val message: String? = null) : State
         data class Failed(val message: String, val release: Release? = null) : State
     }
 
@@ -167,12 +168,11 @@ class Updater(private val context: Context, private val prefs: Prefs, private va
     }
 
     fun failed(message: String) {
-        val release = when (val s = state) {
-            is State.Ready -> s.release
-            is State.Available -> s.release
-            else -> null
+        state = when (val s = state) {
+            is State.Ready -> s.copy(message = message)
+            is State.Available -> State.Failed(message, s.release)
+            else -> State.Failed(message)
         }
-        state = State.Failed(message, release)
     }
 
     /** Once after an update: "Updated to X" and the notes saved before installing. Null otherwise. */

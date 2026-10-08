@@ -39,7 +39,10 @@ fun UpdateSheet(backdrop: Backdrop, updater: Updater, onDismiss: () -> Unit) {
                 LinearProgressIndicator({ state.fraction }, Modifier.fillMaxWidth(), color = LocalAccent.current)
                 SecondaryButton("Cancel", updater::cancel, Modifier.fillMaxWidth())
             }
-            is Updater.State.Ready -> PrimaryButton("Install", { updater.install(state.file) }, Modifier.fillMaxWidth())
+            is Updater.State.Ready -> {
+                state.message?.let { Text(it, style = Type.Secondary, color = Dby.Danger) }
+                PrimaryButton("Install", { updater.install(state.file) }, Modifier.fillMaxWidth())
+            }
             else -> {
                 if (state is Updater.State.Failed) Text(state.message, style = Type.Secondary, color = Dby.Danger)
                 Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {

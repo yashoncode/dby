@@ -184,7 +184,7 @@ fun SettingsScreen(app: DbyApp) {
                             Updater.State.UpToDate -> "DBY is up to date."
                             is Updater.State.Available -> "Version ${state.release.versionName} is available."
                             is Updater.State.Downloading -> "Downloading ${state.release.versionName}…"
-                            is Updater.State.Ready -> "Version ${state.release.versionName} is ready to install."
+                            is Updater.State.Ready -> state.message ?: "Version ${state.release.versionName} is ready to install."
                             is Updater.State.Failed -> state.message
                         },
                         onClick = {
