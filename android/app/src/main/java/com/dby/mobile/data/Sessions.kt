@@ -74,6 +74,25 @@ class Sessions(private val prefs: Prefs, private val secrets: Secrets) {
         return saved
     }
 
+    /**
+     * Saves imported connections, skipping any already here (same host, port, user and database).
+     * Returns how many were added.
+     */
+    suspend fun import(list: List<Imported>): Int {
+        val here = connections.map { listOf(it.host, it.port.toInt(), it.user, it.database) }.toMutableSet()
+        var added = 0
+        for (c in list) {
+            val f = c.form
+            if (!here.add(listOf(f.host, f.port, f.user, f.database))) continue
+            // An empty cipher means "ask at the first connect".
+            val cipher = c.password?.let { encrypt(it) } ?: ByteArray(0)
+            saveConnection(ConnectionInput(null, f.name, f.host, f.port.toUShort(), f.user, f.database, f.env, f.tls, cipher))
+            added++
+        }
+        reload()
+        return added
+    }
+
     suspend fun delete(id: String) {
         disconnect(id)
         deleteConnection(id)

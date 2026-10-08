@@ -68,7 +68,7 @@ class EditConnectionModel(private val id: String?, private val sessions: Session
     var deleting by mutableStateOf(false)
 
     val valid: Boolean
-        get() = name.isNotBlank() && host.isNotBlank() && user.isNotBlank() && database.isNotBlank() && port.toIntOrNull() in 1..65535
+        get() = name.isNotBlank() && host.isNotBlank() && user.isNotBlank() && port.toIntOrNull() in 1..65535
 
     fun test() {
         scope.launch {

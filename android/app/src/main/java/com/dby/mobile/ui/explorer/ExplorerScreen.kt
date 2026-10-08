@@ -117,6 +117,8 @@ class ExplorerModel(val id: String, private val sessions: Sessions, private val 
         try {
             readOnly = session.isReadOnly()
             database = session.database()
+            // Imported connections may have no database: pick one first.
+            if (database.isBlank()) return loadDatabases()
             schema = session.refreshSchema()
             pins = prefs.pinnedTables(id, database)
         } finally {
@@ -301,7 +303,7 @@ fun ExplorerScreen(app: DbyApp, connectionId: String) {
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(6.dp),
                 ) {
-                    Text(model.database, style = Type.MonoTitle, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f, fill = false))
+                    Text(model.database.ifBlank { "Choose a database" }, style = Type.MonoTitle, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f, fill = false))
                     Icon(DbyIcons.ChevronDown, contentDescription = "Switch database", tint = Dby.Secondary, modifier = Modifier.size(22.dp))
                 }
             }
