@@ -147,6 +147,8 @@ fun SettingsScreen(app: DbyApp) {
                 Hairline()
                 ToggleRow("Reduce blur", "Solid glass instead of live blur. Saves battery.", prefs.reduceBlur, { prefs.reduceBlur = it })
                 Hairline()
+                ToggleRow("Haptics", "A light tap when you press buttons, switches and tabs.", prefs.haptics, { prefs.haptics = it })
+                Hairline()
                 Row(Modifier.fillMaxWidth().padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
                     Text("Accent", style = Type.Body, modifier = Modifier.weight(1f))
                     Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {

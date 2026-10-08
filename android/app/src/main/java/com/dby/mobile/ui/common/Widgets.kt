@@ -10,6 +10,8 @@ import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
@@ -92,12 +94,13 @@ fun RoundButton(
     tint: Color = Dby.Fg,
     enabled: Boolean = true,
 ) {
+    val haptic = rememberHaptics()
     Box(
         modifier
             .size(44.dp)
             .clip(CircleShape)
             .background(Dby.FillStrong)
-            .clickable(enabled = enabled, role = Role.Button, onClick = onClick)
+            .clickable(enabled = enabled, role = Role.Button) { haptic(HapticFeedbackType.ContextClick); onClick() }
             .semantics { contentDescription = label },
         contentAlignment = Alignment.Center,
     ) {
@@ -166,8 +169,12 @@ fun ListRow(
     trailing: @Composable () -> Unit = { if (onClick != null) Chevron() },
     titleExtra: @Composable RowScope.() -> Unit = {},
 ) {
+    val haptic = rememberHaptics()
     val clicks = if (onClick != null || onLongClick != null) {
-        Modifier.combinedClickable(onClick = { onClick?.invoke() }, onLongClick = onLongClick)
+        Modifier.combinedClickable(
+            onClick = { onClick?.invoke() },
+            onLongClick = onLongClick?.let { long -> { haptic(HapticFeedbackType.LongPress); long() } },
+        )
     } else {
         Modifier
     }
@@ -212,13 +219,14 @@ fun Chip(
     onClose: (() -> Unit)? = null,
 ) {
     val fg = if (selected) Dby.Bg else Dby.Fg
+    val haptic = rememberHaptics()
     Row(
         Modifier
             .height(36.dp)
             .clip(CircleShape)
             .background(if (selected) Dby.Fg else Dby.Fill)
             .border(0.5.dp, if (selected) Dby.Fg else Dby.Outline, CircleShape)
-            .selectable(selected = selected, role = Role.Button, onClick = onClick)
+            .selectable(selected = selected, role = Role.Button) { haptic(HapticFeedbackType.SegmentTick); onClick() }
             .padding(start = 14.dp, end = if (onClose != null) 8.dp else 14.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(6.dp),
@@ -242,6 +250,7 @@ fun <T> Segmented(
     label: (T) -> String,
     modifier: Modifier = Modifier,
 ) {
+    val haptic = rememberHaptics()
     Row(
         modifier.clip(RoundedCornerShape(22.dp)).background(Dby.Fill).padding(4.dp),
         horizontalArrangement = Arrangement.spacedBy(4.dp),
@@ -254,7 +263,7 @@ fun <T> Segmented(
                     .height(36.dp)
                     .clip(RoundedCornerShape(18.dp))
                     .background(if (on) Dby.Selected else Color.Transparent)
-                    .selectable(selected = on, role = Role.Tab) { onSelect(option) },
+                    .selectable(selected = on, role = Role.Tab) { haptic(HapticFeedbackType.SegmentTick); onSelect(option) },
                 contentAlignment = Alignment.Center,
             ) {
                 Text(
@@ -274,8 +283,12 @@ fun <T> Segmented(
 fun Toggle(checked: Boolean, onChange: (Boolean) -> Unit, enabled: Boolean = true) {
     val accent = LocalAccent.current
     val knob by animateDpAsState(if (checked) 20.dp else 0.dp, label = "knob")
+    val haptic = rememberHaptics()
     Box(
-        Modifier.size(64.dp, 44.dp).toggleable(checked, enabled = enabled, role = Role.Switch, onValueChange = onChange),
+        Modifier.size(64.dp, 44.dp).toggleable(checked, enabled = enabled, role = Role.Switch) {
+            haptic(if (it) HapticFeedbackType.ToggleOn else HapticFeedbackType.ToggleOff)
+            onChange(it)
+        },
         contentAlignment = Alignment.Center,
     ) {
         Box(
@@ -316,12 +329,13 @@ fun PrimaryButton(
 ) {
     val accent = LocalAccent.current
     val fg = if (enabled) Dby.Bg else Dby.Faint
+    val haptic = rememberHaptics()
     Row(
         modifier
             .height(52.dp)
             .clip(CircleShape)
             .background(if (enabled) accent else Dby.FillStrong)
-            .clickable(enabled = enabled && !busy, role = Role.Button, onClick = onClick)
+            .clickable(enabled = enabled && !busy, role = Role.Button) { haptic(HapticFeedbackType.Confirm); onClick() }
             .padding(horizontal = 20.dp),
         horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterHorizontally),
         verticalAlignment = Alignment.CenterVertically,
@@ -346,12 +360,13 @@ fun SecondaryButton(
     busy: Boolean = false,
 ) {
     val fg = if (enabled) tint else Dby.Faint
+    val haptic = rememberHaptics()
     Row(
         modifier
             .height(52.dp)
             .clip(CircleShape)
             .background(Dby.FillStrong)
-            .clickable(enabled = enabled && !busy, role = Role.Button, onClick = onClick)
+            .clickable(enabled = enabled && !busy, role = Role.Button) { haptic(HapticFeedbackType.ContextClick); onClick() }
             .padding(horizontal = 20.dp),
         horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterHorizontally),
         verticalAlignment = Alignment.CenterVertically,
@@ -578,6 +593,7 @@ class Action(val label: String, val icon: ImageVector? = null, val danger: Boole
 /** A list of actions in a sheet: long-press menus and "More" buttons. */
 @Composable
 fun ActionSheet(backdrop: Backdrop, title: String?, actions: List<Action>, onDismiss: () -> Unit) {
+    val haptic = rememberHaptics()
     Sheet(backdrop, onDismiss) {
         if (title != null) Text(title, style = Type.Section, maxLines = 1, overflow = TextOverflow.Ellipsis)
         Column(Modifier.fillMaxWidth().lightGlass(RoundedCornerShape(22.dp))) {
@@ -585,7 +601,7 @@ fun ActionSheet(backdrop: Backdrop, title: String?, actions: List<Action>, onDis
                 if (i > 0) Hairline(if (action.icon != null) 52.dp else 16.dp)
                 val tint = if (action.danger) Dby.Danger else Dby.Fg
                 Row(
-                    Modifier.fillMaxWidth().height(56.dp).clickable(role = Role.Button, onClick = action.onClick).padding(horizontal = 16.dp),
+                    Modifier.fillMaxWidth().height(56.dp).clickable(role = Role.Button) { haptic(HapticFeedbackType.ContextClick); action.onClick() }.padding(horizontal = 16.dp),
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(16.dp),
                 ) {
@@ -634,7 +650,7 @@ fun PasswordSheet(backdrop: Backdrop, name: String, onSubmit: (password: String,
     var remember by remember { mutableStateOf(true) }
     Sheet(backdrop, onDismiss) {
         Text("Password for $name", style = Type.Title)
-        Text("The saved password can't be used, so enter it to connect.", style = Type.Secondary, color = Dby.Secondary)
+        Text("No saved password can be used. Enter it to connect.", style = Type.Secondary, color = Dby.Secondary)
         Column(Modifier.fillMaxWidth().lightGlass(RoundedCornerShape(22.dp))) {
             FieldRow("Password", password, { password = it }, keyboard = KeyboardType.Password, secret = true)
             Hairline()
@@ -648,4 +664,11 @@ fun copyText(context: Context, label: String, text: String) {
     val clipboard = context.getSystemService(ClipboardManager::class.java)
     clipboard.setPrimaryClip(ClipData.newPlainText(label, text))
     Toast.makeText(context, "Copied", Toast.LENGTH_SHORT).show()
+}
+
+/** A light tap of feedback on touch, unless Haptics is off in Settings. */
+@Composable
+fun rememberHaptics(): (HapticFeedbackType) -> Unit {
+    val haptic = LocalHapticFeedback.current
+    return remember(haptic) { { type -> if (DbyApp.instance.prefs.haptics) haptic.performHapticFeedback(type) } }
 }

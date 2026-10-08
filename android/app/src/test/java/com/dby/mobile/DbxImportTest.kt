@@ -47,7 +47,26 @@ class DbxImportTest {
         assertFalse(dbxNeedsPassphrase(plain))
         val c = readDbx(plain, null).connections.single()
         assertEquals("h", c.form.name)
-        assertEquals("", c.password)
+        assertNull(c.password) // blank means "not exported": asked for at the first connect
+    }
+
+    @Test
+    fun dbx_plaintext_export_has_no_format_and_blank_passwords() {
+        // What dbx writes for "Export without passphrase": every password scrubbed to "".
+        val plain = """{"connections":[{"id":"a","name":"Prod","db_type":"mysql","host":"db.example.com","port":3306,"username":"app","password":"","database":"shop","ssl":true}],"layout":{"groups":[],"order":[]},"tunnelProfiles":[]}"""
+        assertFalse(dbxNeedsPassphrase(plain))
+        val c = readDbx(plain, null).connections.single()
+        assertEquals("Prod", c.form.name)
+        assertNull(c.password)
+    }
+
+    @Test
+    fun legacy_bare_array_export_is_read() {
+        val legacy = """[{"name":"Old","db_type":"mariadb","host":"10.0.0.5","port":3307,"username":"u","password":"pw","database":"d"}]"""
+        assertFalse(dbxNeedsPassphrase(legacy))
+        val c = readDbx(legacy, null).connections.single()
+        assertEquals(3307, c.form.port)
+        assertEquals("pw", c.password)
     }
 
     @Test(expected = IllegalArgumentException::class)

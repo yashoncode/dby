@@ -19,6 +19,7 @@ class Prefs(context: Context) {
     var reduceBlur by stored(false)
     var accent by stored(0xFF5AC8FA.toInt())
     var reconnect by stored(true)
+    var haptics by stored(true)
     var updateChecks by stored(true)
     var lastUpdateCheckMs by stored(0L)
     var seenVersionCode by stored(0)
