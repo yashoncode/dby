@@ -120,11 +120,11 @@ fun QueryScreen(app: DbyApp) {
     val context = LocalContext.current
     val saveCsv = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("text/csv")) { uri ->
         val r = model.result
-        if (uri != null && r != null) writeFile(context, uri, csv(r.columns, r.rows))
+        if (uri != null && r != null) writeFile(context, uri, csv(r.columns, model.fullRows()))
     }
     val saveJson = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/json")) { uri ->
         val r = model.result
-        if (uri != null && r != null) writeFile(context, uri, json(r.columns, r.rows))
+        if (uri != null && r != null) writeFile(context, uri, json(r.columns, model.fullRows()))
     }
     LaunchedEffect(sessions.activeId, model.session) { model.rebuild() }
     BackHandler(enabled = model.showResult) { model.showResult = false }
@@ -419,7 +419,9 @@ private fun ResultView(model: QueryModel, onRow: (Int) -> Unit, onExport: () -> 
 @Composable
 private fun ResultRowSheet(model: QueryModel, index: Int, backdrop: Backdrop, onDismiss: () -> Unit) {
     val result = model.result ?: return
-    val row = result.rows.getOrNull(index) ?: return
+    if (index !in result.rows.indices) return
+    // Whole values, not the 256-character previews the grid shows.
+    val row = remember(result, index) { result.rows[index].indices.map { model.fullCell(index, it) } }
     val columns = result.columns
     val context = LocalContext.current
     val haptic = rememberHaptics()

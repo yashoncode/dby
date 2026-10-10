@@ -63,8 +63,19 @@ pub fn meta_of(col: &Column) -> ColMeta {
     ColMeta { kind, unsigned: col.flags().contains(ColumnFlags::UNSIGNED_FLAG) }
 }
 
+/// Trims a text cell longer than [CLIENT_CAP] characters and hands back the whole text, so a
+/// result of the user's SQL can keep it aside for when they open the value.
+pub fn cap_text(cell: Cell) -> (Cell, Option<String>) {
+    match cell {
+        Cell::Text { v, full_len } if full_len > CLIENT_CAP as u64 => {
+            (Cell::Text { v: v.chars().take(CLIENT_CAP).collect(), full_len }, Some(v))
+        }
+        other => (other, None),
+    }
+}
+
 /// `server_full_len` is the length the server reported for a value it trimmed.
-/// `client_cap` trims long text and bytes here instead, for SQL the user wrote.
+/// `client_cap` trims long bytes here instead, for SQL the user wrote (text goes through [cap_text]).
 pub fn decode(value: Value, meta: &ColMeta, server_full_len: Option<u64>, client_cap: bool) -> Cell {
     match value {
         Value::NULL => Cell::Null,
@@ -120,11 +131,7 @@ fn from_text(b: Vec<u8>, meta: &ColMeta, server_full_len: Option<u64>, client_ca
         Kind::Text => {
             let s = lossy(b);
             let chars = s.chars().count() as u64;
-            if client_cap && chars > CLIENT_CAP as u64 {
-                Cell::Text { v: s.chars().take(CLIENT_CAP).collect(), full_len: chars }
-            } else {
-                Cell::Text { v: s, full_len: server_full_len.unwrap_or(chars) }
-            }
+            Cell::Text { v: s, full_len: server_full_len.unwrap_or(chars) }
         }
     }
 }
@@ -220,9 +227,11 @@ mod tests {
     fn client_cap_trims_text_and_bytes() {
         let long = "é".repeat(1000);
         assert_eq!(
-            decode(bytes(&long), &text_col(), None, true),
-            Cell::Text { v: "é".repeat(CLIENT_CAP), full_len: 1000 }
+            cap_text(decode(bytes(&long), &text_col(), None, true)),
+            (Cell::Text { v: "é".repeat(CLIENT_CAP), full_len: 1000 }, Some(long))
         );
+        let short = Cell::Text { v: "é".repeat(CLIENT_CAP), full_len: CLIENT_CAP as u64 };
+        assert_eq!(cap_text(short.clone()), (short, None));
         let m = meta(ColumnType::MYSQL_TYPE_BLOB, ColumnFlags::empty(), BIN);
         assert_eq!(
             decode(Value::Bytes(vec![7; 1000]), &m, None, true),

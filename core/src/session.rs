@@ -132,6 +132,7 @@ pub struct QueryResult {
 struct Capped {
     columns: Vec<ColumnOut>,
     rows: Vec<Vec<Cell>>,
+    full_texts: HashMap<(u32, u32), String>,
     affected_rows: u64,
     truncated: bool,
 }
@@ -162,6 +163,8 @@ pub struct Session {
     /// `run_id` of the user SQL in flight, if any.
     running: StdMutex<Option<String>>,
     tables: StdMutex<HashMap<String, Arc<TableMeta>>>,
+    /// The whole text of each cell the last `run_sql` result trimmed, by (row, column).
+    full_texts: StdMutex<HashMap<(u32, u32), String>>,
     info: ServerInfo,
 }
 
@@ -205,6 +208,7 @@ impl Session {
             query: Mutex::new(Some(query)),
             running: StdMutex::new(None),
             tables: StdMutex::new(HashMap::new()),
+            full_texts: StdMutex::new(HashMap::new()),
             read_only: AtomicBool::new(read_only),
             params: StdMutex::new(params),
             connection_id,
@@ -454,6 +458,7 @@ impl Session {
             Err(e) => self.record(&sql, Some(e.to_string()), 0, elapsed),
         }
         let capped = outcome?;
+        *self.full_texts.lock().unwrap() = capped.full_texts;
         Ok(QueryResult {
             columns: capped.columns,
             rows: capped.rows,
@@ -461,6 +466,11 @@ impl Session {
             truncated: capped.truncated,
             elapsed_ms: elapsed,
         })
+    }
+
+    /// The whole text of a cell the last `run_sql` result trimmed; None for a cell it kept whole.
+    pub fn result_text(&self, row: u32, column: u32) -> Option<String> {
+        self.full_texts.lock().unwrap().get(&(row, column)).cloned()
     }
 
     /// Interrupts `run_id` if it is still running. A finished or unknown run is a no-op.
@@ -521,6 +531,7 @@ impl Session {
         let columns = result.columns().map(|c| c.to_vec()).unwrap_or_default();
         let metas: Vec<ColMeta> = columns.iter().map(value::meta_of).collect();
         let mut rows = Vec::new();
+        let mut full_texts = HashMap::new();
         let mut truncated = false;
         if !columns.is_empty() {
             if let Some(mut stream) = result.stream::<Row>().await? {
@@ -530,7 +541,15 @@ impl Session {
                         truncated = true;
                         break;
                     }
-                    rows.push(row.unwrap().into_iter().zip(&metas).map(|(v, m)| value::decode(v, m, None, true)).collect());
+                    let r = rows.len() as u32;
+                    let cells = row.unwrap().into_iter().zip(&metas).enumerate().map(|(c, (v, m))| {
+                        let (cell, full) = value::cap_text(value::decode(v, m, None, true));
+                        if let Some(full) = full {
+                            full_texts.insert((r, c as u32), full);
+                        }
+                        cell
+                    });
+                    rows.push(cells.collect());
                 }
             }
         }
@@ -543,7 +562,7 @@ impl Session {
             Err(mysql_async::Error::Server(e)) if truncated && e.code == 1317 => {}
             other => other?,
         }
-        Ok(Capped { columns: columns.iter().map(column_out).collect(), rows, affected_rows, truncated })
+        Ok(Capped { columns: columns.iter().map(column_out).collect(), rows, full_texts, affected_rows, truncated })
     }
 
     /// `KILL QUERY` for the query connection, sent over browse.

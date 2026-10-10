@@ -8,6 +8,7 @@ import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.text.input.TextFieldValue
+import com.dby.core.Cell
 import com.dby.core.Filter
 import com.dby.core.FilterOp
 import com.dby.core.QueryResult
@@ -26,6 +27,7 @@ import com.dby.core.saveQuery
 import com.dby.core.savedQueries
 import com.dby.mobile.data.Prefs
 import com.dby.mobile.data.Sessions
+import com.dby.mobile.data.isTrimmed
 import com.dby.mobile.ui.common.Connector
 import com.dby.mobile.ui.nav.ScreenModel
 import java.util.UUID
@@ -56,6 +58,8 @@ class QueryModel(private val sessions: Sessions, private val prefs: Prefs) : Scr
         private set
     var ranSql by mutableStateOf("")
         private set
+    /** The session that ran [result]: it holds the whole text of the cells the result trimmed. */
+    private var resultSession: Session? = null
     var showResult by mutableStateOf(false)
     var problem by mutableStateOf<Throwable?>(null)
     var confirming by mutableStateOf<String?>(null)
@@ -126,6 +130,7 @@ class QueryModel(private val sessions: Sessions, private val prefs: Prefs) : Scr
                 val r = s.runSql(id, text, true)
                 Log.i("DBYBENCH", "app=dby event=sql ms=${SystemClock.elapsedRealtime() - started} rows=${r.rows.size}")
                 result = r
+                resultSession = s
                 ranSql = text
                 showResult = true
             } catch (e: CancellationException) {
@@ -138,6 +143,16 @@ class QueryModel(private val sessions: Sessions, private val prefs: Prefs) : Scr
             }
         }
     }
+
+    /** A result cell in full: text the result trimmed to 256 characters comes back whole from the core. */
+    fun fullCell(row: Int, column: Int): Cell {
+        val cell = result?.rows?.getOrNull(row)?.getOrNull(column) ?: return Cell.Null
+        if (cell !is Cell.Text || !cell.isTrimmed()) return cell
+        return resultSession?.resultText(row.toUInt(), column.toUInt())?.let { Cell.Text(it, cell.fullLen) } ?: cell
+    }
+
+    /** Every result row in full, for export. */
+    fun fullRows(): List<List<Cell>> = result?.rows.orEmpty().mapIndexed { r, row -> row.indices.map { fullCell(r, it) } }
 
     fun cancel() {
         val s = session ?: return

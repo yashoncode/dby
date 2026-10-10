@@ -17,8 +17,8 @@ android {
         applicationId = "com.dby.mobile"
         minSdk = 26
         targetSdk = 36
-        versionCode = 105
-        versionName = "1.0.5"
+        versionCode = 106
+        versionName = "1.0.6"
         // Off for any store build: Play does not allow REQUEST_INSTALL_PACKAGES for apps like this.
         buildConfigField("boolean", "IN_APP_UPDATES", "true")
         ndk {
