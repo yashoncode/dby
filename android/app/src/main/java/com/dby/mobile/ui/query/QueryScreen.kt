@@ -445,8 +445,25 @@ private fun ResultRowSheet(model: QueryModel, index: Int, backdrop: Backdrop, on
                     horizontalArrangement = Arrangement.spacedBy(12.dp),
                 ) {
                     Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                        var expanded by remember(index, i) { mutableStateOf(false) }
+                        var long by remember(index, i) { mutableStateOf(false) }
                         Text(column.name, style = Type.Caption.copy(fontFamily = GeistMono, fontWeight = FontWeight.SemiBold), color = Dby.Secondary)
-                        Text(cell.display(), style = Type.Mono, color = if (cell is Cell.Null) Dby.Faint else Dby.Fg, maxLines = 8, overflow = TextOverflow.Ellipsis)
+                        Text(
+                            cell.display(),
+                            style = Type.Mono,
+                            color = if (cell is Cell.Null) Dby.Faint else Dby.Fg,
+                            maxLines = if (expanded) Int.MAX_VALUE else 3,
+                            overflow = TextOverflow.Ellipsis,
+                            onTextLayout = { if (!expanded) long = it.hasVisualOverflow },
+                        )
+                        if (long) {
+                            Text(
+                                if (expanded) "Collapse" else "Expand",
+                                style = Type.Caption.copy(fontWeight = FontWeight.SemiBold),
+                                color = LocalAccent.current,
+                                modifier = Modifier.clip(CircleShape).clickable(role = Role.Button) { expanded = !expanded }.padding(vertical = 6.dp),
+                            )
+                        }
                     }
                     Icon(DbyIcons.Copy, contentDescription = null, tint = Dby.Faint, modifier = Modifier.size(16.dp))
                 }

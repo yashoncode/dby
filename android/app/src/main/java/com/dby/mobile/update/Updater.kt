@@ -223,7 +223,8 @@ class Updater(private val context: Context, private val prefs: Prefs, private va
         connection.connectTimeout = 10_000
         connection.readTimeout = 10_000
         try {
-            if (connection.responseCode != 200) throw IllegalStateException("GitHub answered ${connection.responseCode}.")
+            // After redirects, url is the host that answered: github.com or its download server.
+            if (connection.responseCode != 200) throw IllegalStateException("${connection.url.host} answered ${connection.responseCode}.")
             return connection.inputStream.use { it.reader().readText() }
         } finally {
             connection.disconnect()
