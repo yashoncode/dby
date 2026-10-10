@@ -43,6 +43,7 @@ import com.dby.core.RowChange
 import com.dby.mobile.data.display
 import com.dby.mobile.data.isTrimmed
 import com.dby.mobile.data.rawText
+import com.dby.mobile.data.rowJson
 import com.dby.mobile.ui.DbyIcons
 import com.dby.mobile.ui.common.Action
 import com.dby.mobile.ui.common.ActionSheet
@@ -64,7 +65,6 @@ import com.dby.mobile.ui.theme.Type
 import com.kyant.backdrop.Backdrop
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
-import org.json.JSONObject
 
 /** Types an edit field never writes: binary values only reach the phone as a preview. */
 private val BINARY = setOf("binary", "varbinary", "tinyblob", "blob", "mediumblob", "longblob", "geometry", "point", "linestring", "polygon")
@@ -154,23 +154,7 @@ class RowEditor(val model: TableModel, val rowIndex: Int?) {
         }
     }
 
-    /** The row as JSON; exact numbers stay strings so nothing is rounded. */
-    fun json(): String {
-        val row = original ?: return "{}"
-        val obj = JSONObject()
-        model.columns.forEachIndexed { i, c ->
-            obj.put(
-                c.name,
-                when (val cell = row[i]) {
-                    is Cell.Null -> JSONObject.NULL
-                    is Cell.Signed -> cell.v
-                    is Cell.Real -> cell.v
-                    else -> cell.display()
-                },
-            )
-        }
-        return obj.toString(2)
-    }
+    fun json(): String = original?.let { rowJson(model.columns, it).toString(2) } ?: "{}"
 
     /** A new-row editor holding this row's values, without its key. */
     fun duplicate(): RowEditor = RowEditor(model, null).also { copy ->

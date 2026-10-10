@@ -1,10 +1,17 @@
 package com.dby.mobile.ui.query
 
+import android.content.Context
+import android.net.Uri
+import android.widget.Toast
 import com.dby.mobile.data.fuzzySearch
 import com.dby.mobile.ui.common.SearchField
 import androidx.activity.compose.BackHandler
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -40,20 +47,30 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import com.dby.core.Cell
 import com.dby.core.Filter
 import com.dby.core.FilterOp
 import com.dby.core.Sort
 import com.dby.mobile.DbyApp
 import com.dby.mobile.bottomSpace
 import com.dby.mobile.data.count
+import com.dby.mobile.data.csv
+import com.dby.mobile.data.display
+import com.dby.mobile.data.json
+import com.dby.mobile.data.rawText
+import com.dby.mobile.data.rowJson
 import com.dby.mobile.topSpace
 import com.dby.mobile.ui.DbyIcons
 import com.dby.mobile.ui.SqlTransformation
+import com.dby.mobile.ui.common.Action
+import com.dby.mobile.ui.common.ActionSheet
 import com.dby.mobile.ui.common.Busy
 import com.dby.mobile.ui.common.Chip
 import com.dby.mobile.ui.common.ConfirmSheet
@@ -72,14 +89,18 @@ import com.dby.mobile.ui.common.SecondaryButton
 import com.dby.mobile.ui.common.SectionHeader
 import com.dby.mobile.ui.common.Segmented
 import com.dby.mobile.ui.common.Sheet
+import com.dby.mobile.ui.common.SheetHeader
 import com.dby.mobile.ui.common.TopBar
+import com.dby.mobile.ui.common.copyText
 import com.dby.mobile.ui.common.gridItems
+import com.dby.mobile.ui.common.rememberHaptics
 import com.dby.mobile.ui.glass.GlassHost
 import com.dby.mobile.ui.glass.lightGlass
 import com.dby.mobile.ui.glass.liquidGlass
 import com.dby.mobile.ui.nav.Screen
 import com.dby.mobile.ui.table.symbol
 import com.dby.mobile.ui.theme.Dby
+import com.dby.mobile.ui.theme.GeistMono
 import com.dby.mobile.ui.theme.LocalAccent
 import com.dby.mobile.ui.theme.Type
 import com.dby.mobile.ui.theme.colors
@@ -94,11 +115,33 @@ fun QueryScreen(app: DbyApp) {
     var pickingTable by remember { mutableStateOf(false) }
     var savedOpen by remember { mutableStateOf(false) }
     var saving by remember { mutableStateOf(false) }
+    var viewingRow by remember { mutableStateOf<Int?>(null) }
+    var exporting by remember { mutableStateOf(false) }
+    val context = LocalContext.current
+    val saveCsv = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("text/csv")) { uri ->
+        val r = model.result
+        if (uri != null && r != null) writeFile(context, uri, csv(r.columns, r.rows))
+    }
+    val saveJson = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/json")) { uri ->
+        val r = model.result
+        if (uri != null && r != null) writeFile(context, uri, json(r.columns, r.rows))
+    }
     LaunchedEffect(sessions.activeId, model.session) { model.rebuild() }
     BackHandler(enabled = model.showResult) { model.showResult = false }
     GlassHost(
         overlay = { backdrop ->
             if (!model.showResult) RunBar(model, backdrop, { saving = true }, Modifier.align(Alignment.BottomCenter))
+            viewingRow?.let { ResultRowSheet(model, it, backdrop) { viewingRow = null } }
+            if (exporting) {
+                ActionSheet(
+                    backdrop,
+                    "Export ${count(model.result?.rows?.size?.toLong() ?: 0)} rows",
+                    listOf(
+                        Action("Save as CSV", DbyIcons.Export) { exporting = false; saveCsv.launch("query-result.csv") },
+                        Action("Save as JSON", DbyIcons.Export) { exporting = false; saveJson.launch("query-result.json") },
+                    ),
+                ) { exporting = false }
+            }
             model.connector.asking?.let { c -> PasswordSheet(backdrop, c.name, model.connector::submit, model.connector::dismiss) }
             model.confirming?.let { text ->
                 ConfirmSheet(
@@ -119,7 +162,7 @@ fun QueryScreen(app: DbyApp) {
         },
     ) {
         if (model.showResult) {
-            ResultView(model)
+            ResultView(model, onRow = { viewingRow = it }, onExport = { exporting = true })
         } else {
             Column(
                 Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(top = topSpace(), bottom = bottomSpace(84.dp)),
@@ -346,11 +389,15 @@ private fun RunBar(model: QueryModel, backdrop: Backdrop, onSave: () -> Unit, mo
 }
 
 @Composable
-private fun ResultView(model: QueryModel) {
+private fun ResultView(model: QueryModel, onRow: (Int) -> Unit, onExport: () -> Unit) {
     val result = model.result ?: return
     val hScroll = rememberScrollState()
     LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(top = topSpace(), bottom = bottomSpace())) {
-        item { TopBar(onBack = { model.showResult = false }) }
+        item {
+            TopBar(onBack = { model.showResult = false }) {
+                RoundButton(DbyIcons.Export, "Export results", onExport, enabled = result.rows.isNotEmpty())
+            }
+        }
         item {
             Column(Modifier.padding(horizontal = 16.dp, vertical = 10.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                 Text("Result", style = Type.LargeTitle)
@@ -363,8 +410,69 @@ private fun ResultView(model: QueryModel) {
                 Text(model.ranSql, style = Type.MonoSmall, color = Dby.Tertiary, maxLines = 2, overflow = TextOverflow.Ellipsis)
             }
         }
-        if (result.columns.isNotEmpty()) gridItems(result.columns, result.rows, hScroll)
+        if (result.columns.isNotEmpty()) gridItems(result.columns, result.rows, hScroll, onRow = onRow)
     }
+}
+
+/** One result row as name / value pairs: tap a field to copy its value, long-press for "name: value". */
+@OptIn(ExperimentalFoundationApi::class)
+@Composable
+private fun ResultRowSheet(model: QueryModel, index: Int, backdrop: Backdrop, onDismiss: () -> Unit) {
+    val result = model.result ?: return
+    val row = result.rows.getOrNull(index) ?: return
+    val columns = result.columns
+    val context = LocalContext.current
+    val haptic = rememberHaptics()
+    var menuOpen by remember { mutableStateOf(false) }
+    Sheet(backdrop, onDismiss) {
+        SheetHeader("Row ${index + 1}", subtitle = "of ${count(result.rows.size.toLong())} · ${columns.size} fields", onClose = onDismiss) {
+            RoundButton(DbyIcons.Copy, "Copy row", { menuOpen = true })
+        }
+        Column(Modifier.weight(1f, fill = false).fillMaxWidth().lightGlass(RoundedCornerShape(20.dp)).verticalScroll(rememberScrollState())) {
+            columns.forEachIndexed { i, column ->
+                if (i > 0) Hairline()
+                val cell = row.getOrElse(i) { Cell.Null }
+                val value = cell.rawText() ?: cell.display()
+                Row(
+                    Modifier
+                        .fillMaxWidth()
+                        .combinedClickable(
+                            onClick = { copyText(context, column.name, value) },
+                            onLongClick = { haptic(HapticFeedbackType.LongPress); copyText(context, column.name, "${column.name}: $value") },
+                        )
+                        .padding(horizontal = 16.dp, vertical = 12.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                ) {
+                    Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                        Text(column.name, style = Type.Caption.copy(fontFamily = GeistMono, fontWeight = FontWeight.SemiBold), color = Dby.Secondary)
+                        Text(cell.display(), style = Type.Mono, color = if (cell is Cell.Null) Dby.Faint else Dby.Fg, maxLines = 8, overflow = TextOverflow.Ellipsis)
+                    }
+                    Icon(DbyIcons.Copy, contentDescription = null, tint = Dby.Faint, modifier = Modifier.size(16.dp))
+                }
+            }
+        }
+        Text("Tap a field to copy its value. Long-press to copy its name and value.", style = Type.Caption, color = Dby.Secondary)
+    }
+    if (menuOpen) {
+        ActionSheet(
+            backdrop,
+            null,
+            listOf(
+                Action("Copy row as JSON", DbyIcons.Copy) { menuOpen = false; copyText(context, "Row ${index + 1}", rowJson(columns, row).toString(2)) },
+                Action("Copy row as text", DbyIcons.Copy) {
+                    menuOpen = false
+                    copyText(context, "Row ${index + 1}", columns.indices.joinToString("\n") { "${columns[it].name}: ${row.getOrElse(it) { Cell.Null }.display()}" })
+                },
+            ),
+        ) { menuOpen = false }
+    }
+}
+
+/** Writes text to the file the person picked in the system's save dialog. */
+private fun writeFile(context: Context, uri: Uri, text: String) {
+    val saved = runCatching { context.contentResolver.openOutputStream(uri)!!.use { it.write(text.toByteArray()) } }.isSuccess
+    Toast.makeText(context, if (saved) "Saved" else "Couldn't save that file.", Toast.LENGTH_SHORT).show()
 }
 
 @Composable

@@ -80,4 +80,14 @@ class FormatTest {
         val rows = listOf(listOf(Cell.Signed(1), Cell.Text("a,b \"c\"", 9u)), listOf(Cell.Signed(2), Cell.Null))
         assertEquals("id,note\n1,\"a,b \"\"c\"\"\"\n2,\n", com.dby.mobile.data.csv(columns, rows))
     }
+
+    @Test
+    fun json_keeps_repeated_names_and_exact_numbers() {
+        val columns = listOf(com.dby.core.ColumnOut("id", "int"), com.dby.core.ColumnOut("id", "int"), com.dby.core.ColumnOut("amount", "decimal"))
+        val rows = listOf(listOf(Cell.Signed(1), Cell.Null, Cell.Exact("0.10")))
+        val parsed = org.json.JSONArray(com.dby.mobile.data.json(columns, rows)).getJSONObject(0)
+        assertEquals(1, parsed.getInt("id"))
+        assertTrue(parsed.isNull("id_2"))
+        assertEquals("0.10", parsed.getString("amount"))
+    }
 }

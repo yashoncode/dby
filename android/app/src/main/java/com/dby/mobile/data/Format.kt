@@ -7,6 +7,8 @@ import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 import kotlin.math.roundToLong
+import org.json.JSONArray
+import org.json.JSONObject
 
 /** A cell as one line of text for lists and grids. A value the server trimmed ends with "…". */
 fun Cell.display(): String = when (this) {
@@ -87,3 +89,29 @@ fun csv(columns: List<com.dby.core.ColumnOut>, rows: List<List<Cell>>): String =
 }
 
 private fun csvField(s: String) = if (s.any { it == ',' || it == '"' || it == '\n' || it == '\r' }) "\"" + s.replace("\"", "\"\"") + "\"" else s
+
+/**
+ * A row as a JSON object; exact numbers stay strings so nothing is rounded. A name the row
+ * already used (SELECT a.id, b.id) gets "_2", "_3" so no value is dropped.
+ */
+fun rowJson(columns: List<com.dby.core.ColumnOut>, row: List<Cell>): JSONObject {
+    val obj = JSONObject()
+    columns.forEachIndexed { i, c ->
+        var key = c.name
+        var n = 2
+        while (obj.has(key)) key = "${c.name}_${n++}"
+        obj.put(
+            key,
+            when (val cell = row.getOrElse(i) { Cell.Null }) {
+                is Cell.Null -> JSONObject.NULL
+                is Cell.Signed -> cell.v
+                is Cell.Real -> cell.v
+                else -> cell.display()
+            },
+        )
+    }
+    return obj
+}
+
+/** The rows as a JSON array of objects, for export. */
+fun json(columns: List<com.dby.core.ColumnOut>, rows: List<List<Cell>>): String = JSONArray(rows.map { rowJson(columns, it) }).toString(2)
